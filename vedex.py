@@ -181,10 +181,7 @@ class Agent:
         session=None,
         approval_policy="ask",
         max_steps=6,
-        max_new_tokens=512,
-        depth=0,
-        max_depth=1,
-        read_only=False,
+        max_new_tokens=512
     ):
         self.model_client = model_client
         self.workspace = workspace
@@ -193,9 +190,6 @@ class Agent:
         self.approval_policy = approval_policy
         self.max_steps = max_steps
         self.max_new_tokens = max_new_tokens
-        self.depth = depth
-        self.max_depth = max_depth
-        self.read_only = read_only
         self.session = session or {
             "id": datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6],
             "created_at": now(),
@@ -266,13 +260,6 @@ class Agent:
                 "run": self.tool_patch_file,
             },
         }
-        if self.depth < self.max_depth:
-            tools["delegate"] = {
-                "schema": {"task": "str", "max_steps": "int=3"},
-                "risky": False,
-                "description": "Ask a bounded read-only child agent to investigate.",
-                "run": self.tool_delegate,
-            }
         return tools
 
     # Prompt Shape And Cache Reuse
@@ -309,7 +296,7 @@ class Agent:
             "- When writing tests, match the current implementation unless the user explicitly asked you to change the code.",
             "- New files should be complete and runnable, including obvious imports.",
             "- Do not repeat the same tool call with the same arguments if it did not help. Choose a different tool or return a final answer.",
-            "- Required tool arguments must not be empty. Do not call read_file, write_file, patch_file, run_shell, or delegate with args={}.",
+            "- Required tool arguments must not be empty. Do not call read_file, write_file, patch_file, run_shell.",
         ])
         return "\n\n".join([
             "You are Vedex, a small local coding agent running through Ollama.",
@@ -466,8 +453,7 @@ class Agent:
             "search": '<tool>{"name":"search","args":{"pattern":"binary_search","path":"."}}</tool>',
             "run_shell": '<tool>{"name":"run_shell","args":{"command":"uv run --with pytest python -m pytest -q","timeout":20}}</tool>',
             "write_file": '<tool name="write_file" path="binary_search.py"><content>def binary_search(nums, target):\n    return -1\n</content></tool>',
-            "patch_file": '<tool name="patch_file" path="binary_search.py"><old_text>return -1</old_text><new_text>return mid</new_text></tool>',
-            "delegate": '<tool>{"name":"delegate","args":{"task":"inspect README.md","max_steps":3}}</tool>',
+            "patch_file": '<tool name="patch_file" path="binary_search.py"><old_text>return -1</old_text><new_text>return mid</new_text></tool>'
         }
         return examples.get(name, "")
 
@@ -529,17 +515,7 @@ class Agent:
                 raise ValueError(f"old_text must occur exactly once, found {count}")
             return
 
-        if name == "delegate":
-            if self.depth >= self.max_depth:
-                raise ValueError("delegate depth exceeded")
-            task = str(args.get("task", "")).strip()
-            if not task:
-                raise ValueError("task must not be empty")
-            return
-
     def approve(self, name, args):
-        if self.read_only:
-            return False
         if self.approval_policy == "auto":
             return True
         if self.approval_policy == "never":
@@ -615,8 +591,6 @@ class Agent:
         body_text = body.strip("\n")
         if name == "write_file" and "content" not in args and body_text:
             args["content"] = body_text
-        if name == "delegate" and "task" not in args and body_text:
-            args["task"] = body_text.strip()
         return {"name": name, "args": args}
 
     @staticmethod
@@ -778,28 +752,6 @@ class Agent:
             raise ValueError(f"old_text must occur exactly once, found {count}")
         path.write_text(text.replace(old_text, str(args["new_text"]), 1), encoding="utf-8")
         return f"patched {path.relative_to(self.root)}"
-
-    # Delegation And Bounded Subagents
-    def tool_delegate(self, args):
-        if self.depth >= self.max_depth:
-            raise ValueError("delegate depth exceeded")
-        task = str(args.get("task", "")).strip()
-        if not task:
-            raise ValueError("task must not be empty")
-        child = Agent(
-            model_client=self.model_client,
-            workspace=self.workspace,
-            session_store=self.session_store,
-            approval_policy="never",
-            max_steps=int(args.get("max_steps", 3)),
-            max_new_tokens=self.max_new_tokens,
-            depth=self.depth + 1,
-            max_depth=self.max_depth,
-            read_only=True,
-        )
-        child.session["memory"]["task"] = task
-        child.session["memory"]["notes"] = [clip(self.history_text(), 300)]
-        return "delegate_result:\n" + child.ask(task)
 
 
 def build_welcome(agent, model):
