@@ -12,7 +12,6 @@ from pathlib import Path
 
 
 FILES = ("AGENTS.md", "README.md", "pyproject.toml", "package.json")
-HELP = "/help, /memory, /session, /reset, /exit"
 HELP_DETAILS = "\n".join(
     [
         "Commands:",
@@ -25,7 +24,7 @@ HELP_DETAILS = "\n".join(
 )
 MAX_TOOL_OUTPUT = 4000
 MAX_HISTORY = 12000
-IGNORED_PATH_NAMES = {".git", ".mini-coding-agent", "__pycache__", ".pytest_cache", ".ruff_cache", ".venv", "venv"}
+IGNORED_PATH_NAMES = {".git", ".vedex", "__pycache__", ".pytest_cache", ".ruff_cache", ".venv", "venv"}
 
 def now():
     return datetime.now(timezone.utc).isoformat()
@@ -35,17 +34,6 @@ def clip(text, limit=MAX_TOOL_OUTPUT):
     if len(text) <= limit:
         return text
     return text[:limit] + f"\n...[truncated {len(text) - limit} chars]"
-
-
-def middle(text, limit):
-    text = str(text).replace("\n", " ")
-    if len(text) <= limit:
-        return text
-    if limit <= 3:
-        return text[:limit]
-    left = (limit - 3) // 2
-    right = limit - 3 - left
-    return text[:left] + "..." + text[-right:]
 
 
 class WorkspaceContext:
@@ -116,9 +104,7 @@ class WorkspaceContext:
         ])
 
 
-##############################
-#### 5) Session Memory #######
-##############################
+# Session Memory
 class SessionStore:
     def __init__(self, root):
         self.root = Path(root)
@@ -138,18 +124,6 @@ class SessionStore:
     def latest(self):
         files = sorted(self.root.glob("*.json"), key=lambda path: path.stat().st_mtime)
         return files[-1].stem if files else None
-
-
-class FakeModelClient:
-    def __init__(self, outputs):
-        self.outputs = list(outputs)
-        self.prompts = []
-
-    def complete(self, prompt, max_new_tokens):
-        self.prompts.append(prompt)
-        if not self.outputs:
-            raise RuntimeError("fake model ran out of outputs")
-        return self.outputs.pop(0)
 
 
 class OllamaModelClient:
@@ -198,7 +172,7 @@ class OllamaModelClient:
         return data.get("response", "")
 
 
-class MiniAgent:
+class Agent:
     def __init__(
         self,
         model_client,
@@ -252,9 +226,7 @@ class MiniAgent:
         bucket.append(item)
         del bucket[:-limit]
 
-    ###############################################
-    #### 3) Structured Tools And Permissions ######
-    ###############################################
+    # Structured Tools And Permissions
     def build_tools(self):
         tools = {
             "list_files": {
@@ -303,9 +275,7 @@ class MiniAgent:
             }
         return tools
 
-    ############################################
-    #### 2) Prompt Shape And Cache Reuse #######
-    ############################################
+    # Prompt Shape And Cache Reuse
     def build_prefix(self):
         tool_lines = []
         for name, tool in self.tools.items():
@@ -342,7 +312,7 @@ class MiniAgent:
             "- Required tool arguments must not be empty. Do not call read_file, write_file, patch_file, run_shell, or delegate with args={}.",
         ])
         return "\n\n".join([
-            "You are Mini-Coding-Agent, a small local coding agent running through Ollama.",
+            "You are Vedex, a small local coding agent running through Ollama.",
             "Rules:\n" + rules,
             "Tools:\n" + tool_text,
             "Valid response examples:\n" + examples,
@@ -360,9 +330,7 @@ class MiniAgent:
             notes,
         ])
 
-    #####################################################
-    #### 4) Context Reduction And Output Management #####
-    #####################################################
+    # Context Reduction And Output Management
     def history_text(self):
         history = self.session["history"]
         if not history:
@@ -392,9 +360,7 @@ class MiniAgent:
 
         return clip("\n".join(lines), MAX_HISTORY)
 
-    ########################################################
-    #### 2) Prompt Shape And Cache Reuse (Continued) #######
-    ########################################################
+    # Prompt Shape And Cache Reuse (Continued)
     def prompt(self, user_message):
         return "\n\n".join([
             self.prefix,
@@ -403,9 +369,7 @@ class MiniAgent:
             "Current user request:\n" + user_message,
         ])
 
-    ###############################################
-    #### 5) Session Memory (Continued) ###########
-    ###############################################
+    # Session Memory (Continued)
     def record(self, item):
         self.session["history"].append(item)
         self.session_path = self.session_store.save(self.session)
@@ -466,9 +430,7 @@ class MiniAgent:
         self.record({"role": "assistant", "content": final, "created_at": now()})
         return final
 
-    #############################################################
-    #### 3) Structured Tools, Validation, And Permissions #######
-    #############################################################
+    # Structured Tools, Validation, And Permissions
     def run_tool(self, name, args):
         tool = self.tools.get(name)
         if tool is None:
@@ -592,35 +554,35 @@ class MiniAgent:
     def parse(raw):
         raw = str(raw)
         if "<tool>" in raw and ("<final>" not in raw or raw.find("<tool>") < raw.find("<final>")):
-            body = MiniAgent.extract(raw, "tool")
+            body = Agent.extract(raw, "tool")
             try:
                 payload = json.loads(body)
             except Exception:
-                return "retry", MiniAgent.retry_notice("model returned malformed tool JSON")
+                return "retry", Agent.retry_notice("model returned malformed tool JSON")
             if not isinstance(payload, dict):
-                return "retry", MiniAgent.retry_notice("tool payload must be a JSON object")
+                return "retry", Agent.retry_notice("tool payload must be a JSON object")
             if not str(payload.get("name", "")).strip():
-                return "retry", MiniAgent.retry_notice("tool payload is missing a tool name")
+                return "retry", Agent.retry_notice("tool payload is missing a tool name")
             args = payload.get("args", {})
             if args is None:
                 payload["args"] = {}
             elif not isinstance(args, dict):
-                return "retry", MiniAgent.retry_notice()
+                return "retry", Agent.retry_notice()
             return "tool", payload
         if "<tool" in raw and ("<final>" not in raw or raw.find("<tool") < raw.find("<final>")):
-            payload = MiniAgent.parse_xml_tool(raw)
+            payload = Agent.parse_xml_tool(raw)
             if payload is not None:
                 return "tool", payload
-            return "retry", MiniAgent.retry_notice()
+            return "retry", Agent.retry_notice()
         if "<final>" in raw:
-            final = MiniAgent.extract(raw, "final").strip()
+            final = Agent.extract(raw, "final").strip()
             if final:
                 return "final", final
-            return "retry", MiniAgent.retry_notice("model returned an empty <final> answer")
+            return "retry", Agent.retry_notice("model returned an empty <final> answer")
         raw = raw.strip()
         if raw:
             return "final", raw
-        return "retry", MiniAgent.retry_notice("model returned an empty response")
+        return "retry", Agent.retry_notice("model returned an empty response")
 
     @staticmethod
     def retry_notice(problem=None):
@@ -639,7 +601,7 @@ class MiniAgent:
         match = re.search(r"<tool(?P<attrs>[^>]*)>(?P<body>.*?)</tool>", raw, re.S)
         if not match:
             return None
-        attrs = MiniAgent.parse_attrs(match.group("attrs"))
+        attrs = Agent.parse_attrs(match.group("attrs"))
         name = str(attrs.pop("name", "")).strip()
         if not name:
             return None
@@ -648,7 +610,7 @@ class MiniAgent:
         args = dict(attrs)
         for key in ("content", "old_text", "new_text", "command", "task", "pattern", "path"):
             if f"<{key}>" in body:
-                args[key] = MiniAgent.extract_raw(body, key)
+                args[key] = Agent.extract_raw(body, key)
 
         body_text = body.strip("\n")
         if name == "write_file" and "content" not in args and body_text:
@@ -817,16 +779,14 @@ class MiniAgent:
         path.write_text(text.replace(old_text, str(args["new_text"]), 1), encoding="utf-8")
         return f"patched {path.relative_to(self.root)}"
 
-    ###################################################
-    #### 6) Delegation And Bounded Subagents ##########
-    ###################################################
+    # Delegation And Bounded Subagents
     def tool_delegate(self, args):
         if self.depth >= self.max_depth:
             raise ValueError("delegate depth exceeded")
         task = str(args.get("task", "")).strip()
         if not task:
             raise ValueError("task must not be empty")
-        child = MiniAgent(
+        child = Agent(
             model_client=self.model_client,
             workspace=self.workspace,
             session_store=self.session_store,
@@ -842,52 +802,21 @@ class MiniAgent:
         return "delegate_result:\n" + child.ask(task)
 
 
-def build_welcome(agent, model, host):
-    width = max(68, min(shutil.get_terminal_size((80, 20)).columns, 84))
-    inner = width - 4
-    gap = 3
-    left_width = (inner - gap) // 2
-    right_width = inner - gap - left_width
-
-    def row(text):
-        body = middle(text, width - 4)
-        return f"| {body.ljust(width - 4)} |"
-
-    def divider(char="-"):
-        return "+" + char * (width - 2) + "+"
-
-    def center(text):
-        body = middle(text, inner)
-        return f"| {body.center(inner)} |"
-
-    def cell(label, value, size):
-        body = middle(f"{label:<9} {value}", size)
-        return body.ljust(size)
-
-    def pair(left_label, left_value, right_label, right_value):
-        left = cell(left_label, left_value, left_width)
-        right = cell(right_label, right_value, right_width)
-        return f"| {left}{' ' * gap}{right} |"
-
-    line = divider("=")
-    rows = [center(text) for text in WELCOME_ART]
-    rows.extend(
+def build_welcome(agent, model):
+    return "\n".join(
         [
-            center("MINI CODING AGENT"),
-            divider("-"),
-            row(""),
-            row("WORKSPACE  " + middle(agent.workspace.cwd, inner - 11)),
-            pair("MODEL", model, "BRANCH", agent.workspace.branch),
-            pair("APPROVAL", agent.approval_policy, "SESSION", agent.session["id"]),
-            row(""),
+            f"Workspace : {agent.workspace.cwd}",
+            f"Model     : {model}",
+            f"Branch    : {agent.workspace.branch}",
+            f"Approval  : {agent.approval_policy}",
+            f"Session   : {agent.session['id']}",
         ]
     )
-    return "\n".join([line, *rows, line])
 
 
 def build_agent(args):
     workspace = WorkspaceContext.build(args.cwd)
-    store = SessionStore(Path(workspace.repo_root) / ".mini-coding-agent" / "sessions")
+    store = SessionStore(Path(workspace.repo_root) / ".vedex" / "sessions")
     model = OllamaModelClient(
         model=args.model,
         host=args.host,
@@ -899,7 +828,7 @@ def build_agent(args):
     if session_id == "latest":
         session_id = store.latest()
     if session_id:
-        return MiniAgent.from_session(
+        return Agent.from_session(
             model_client=model,
             workspace=workspace,
             session_store=store,
@@ -908,7 +837,7 @@ def build_agent(args):
             max_steps=args.max_steps,
             max_new_tokens=args.max_new_tokens,
         )
-    return MiniAgent(
+    return Agent(
         model_client=model,
         workspace=workspace,
         session_store=store,
@@ -946,7 +875,7 @@ def main(argv=None):
     args = build_arg_parser().parse_args(argv)
     agent = build_agent(args)
 
-    print(build_welcome(agent, model=args.model, host=args.host))
+    print(build_welcome(agent, model=args.model))
 
     if args.prompt:
         prompt = " ".join(args.prompt).strip()
@@ -961,7 +890,7 @@ def main(argv=None):
 
     while True:
         try:
-            user_input = input("\nmini-coding-agent> ").strip()
+            user_input = input("\nvedex> ").strip()
         except (EOFError, KeyboardInterrupt):
             print("")
             return 0
@@ -983,7 +912,6 @@ def main(argv=None):
             agent.reset()
             print("session reset")
             continue
-
         print()
         try:
             print(agent.ask(user_input))
