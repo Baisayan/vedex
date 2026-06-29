@@ -1,10 +1,9 @@
 [project]
 name = "vedex"
 version = "0.1.0"
-description = "A minimal AI coding agent"
+description = "An AI coding agent"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
-
-[project.scripts]
-vedex = "vedex:main"
+dependencies = [
+    "pydantic>=2.13.4",
+]
