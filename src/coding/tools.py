@@ -931,7 +931,7 @@ def _write_temp_output(output: str) -> str:
     with tempfile.NamedTemporaryFile(
         mode="w",
         encoding="utf-8",
-        prefix="tau-bash-",
+        prefix="vedex-bash-",
         suffix=".log",
         delete=False,
     ) as handle:
