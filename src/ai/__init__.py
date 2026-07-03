@@ -15,6 +15,7 @@ from ai.events import (
     ProviderThinkingDeltaEvent,
     ProviderToolCallEvent,
 )
+from ai.fake import FakeProvider
 from ai.openai_compatible import OpenAICompatibleProvider
 from ai.provider import CancellationToken, ModelProvider
 
@@ -23,6 +24,7 @@ __all__ = [
     "DEFAULT_OPENAI_COMPATIBLE_MAX_RETRIES",
     "DEFAULT_OPENAI_COMPATIBLE_MAX_RETRY_DELAY_SECONDS",
     "DEFAULT_OPENAI_COMPATIBLE_TIMEOUT_SECONDS",
+    "FakeProvider",
     "ModelProvider",
     "OpenAICompatibleConfig",
     "OpenAICompatibleProvider",

@@ -7,6 +7,7 @@ import pytest
 from agent import AgentTool, AgentToolResult, SimpleCancellationToken, ToolCall, UserMessage
 from agent.types import JSONValue
 from ai import (
+    FakeProvider,
     OpenAICompatibleConfig,
     OpenAICompatibleProvider,
     ProviderErrorEvent,
@@ -14,12 +15,37 @@ from ai import (
     ProviderRetryEvent,
     ProviderThinkingDeltaEvent,
     ProviderToolCallEvent,
+    ProviderResponseStartEvent,
+    ProviderTextDeltaEvent,
     openai_compatible_config_from_env,
 )
 
 
 async def _collect(stream: AsyncIterator[object]) -> list[object]:
     return [event async for event in stream]
+
+
+@pytest.mark.anyio
+async def test_fake_provider_replays_scripted_events() -> None:
+    scripted = [
+        ProviderResponseStartEvent(model="fake-model"),
+        ProviderTextDeltaEvent(delta="hello"),
+        ProviderResponseEndEvent(message={"role": "assistant", "content": "hello"}),
+    ]
+    provider = FakeProvider([scripted])
+
+    events = await _collect(
+        provider.stream_response(
+            model="fake-model",
+            system="system prompt",
+            messages=[UserMessage(content="hi")],
+            tools=[],
+        )
+    )
+
+    assert events == scripted
+    assert provider.calls[0][0] == "fake-model"
+    assert provider.calls[0][1] == "system prompt"
 
 
 def test_openai_compatible_config_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -105,7 +131,7 @@ async def test_openai_compatible_provider_formats_request_and_streams_text() -> 
         events = await _collect(
             provider.stream_response(
                 model="test-model",
-                system="You are Tau.",
+                system="You are Vedex.",
                 messages=[UserMessage(content="Say hello")],
                 tools=[],
             )
@@ -131,7 +157,7 @@ async def test_openai_compatible_provider_formats_request_and_streams_text() -> 
     assert payload["stream"] is True
     assert "reasoning_effort" not in payload
     assert payload["messages"] == [
-        {"role": "system", "content": "You are Tau."},
+        {"role": "system", "content": "You are Vedex."},
         {"role": "user", "content": "Say hello"},
     ]
 
@@ -161,7 +187,7 @@ async def test_openai_compatible_provider_includes_configured_reasoning_effort()
         events = await _collect(
             provider.stream_response(
                 model="test-model",
-                system="You are Tau.",
+                system="You are Vedex.",
                 messages=[UserMessage(content="Say ok")],
                 tools=[],
             )
@@ -197,7 +223,7 @@ async def test_openai_compatible_provider_can_send_responses_reasoning_effort() 
         await _collect(
             provider.stream_response(
                 model="gpt-5.5",
-                system="You are Tau.",
+                system="You are Vedex.",
                 messages=[UserMessage(content="Say ok")],
                 tools=[],
             )
@@ -230,7 +256,7 @@ async def test_openai_compatible_provider_streams_reasoning_content() -> None:
         events = await _collect(
             provider.stream_response(
                 model="test-model",
-                system="You are Tau.",
+                system="You are Vedex.",
                 messages=[UserMessage(content="Say ok")],
                 tools=[],
             )
@@ -303,7 +329,7 @@ async def test_openai_compatible_provider_streams_tool_calls() -> None:
         events = await _collect(
             provider.stream_response(
                 model="test-model",
-                system="You are Tau.",
+                system="You are Vedex.",
                 messages=[UserMessage(content="Read README.md")],
                 tools=[tool],
             )
@@ -354,7 +380,7 @@ async def test_openai_compatible_provider_retries_transient_status() -> None:
         events = await _collect(
             provider.stream_response(
                 model="test-model",
-                system="You are Tau.",
+                system="You are Vedex.",
                 messages=[UserMessage(content="Say ok")],
                 tools=[],
             )
@@ -397,7 +423,7 @@ async def test_openai_compatible_provider_cancellation_stops_retry_backoff() -> 
         events: list[object] = []
         async for event in provider.stream_response(
             model="test-model",
-            system="You are Tau.",
+            system="You are Vedex.",
             messages=[UserMessage(content="Say ok")],
             tools=[],
             signal=signal,
@@ -432,7 +458,7 @@ async def test_openai_compatible_provider_does_not_retry_non_transient_status() 
         events = await _collect(
             provider.stream_response(
                 model="test-model",
-                system="You are Tau.",
+                system="You are Vedex.",
                 messages=[UserMessage(content="Say ok")],
                 tools=[],
             )
