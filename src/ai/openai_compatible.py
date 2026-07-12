@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import AsyncIterator, Mapping
 from json import JSONDecodeError, dumps, loads
 from typing import Any
