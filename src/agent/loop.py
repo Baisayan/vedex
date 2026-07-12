@@ -19,7 +19,7 @@ from agent.events import (
 from agent.messages import AgentMessage, AssistantMessage, ToolResultMessage
 from agent.tools import AgentTool, AgentToolResult, ToolCall
 from agent.types import JSONValue
-from ai.events import (
+from ollama.events import (
     ProviderErrorEvent,
     ProviderResponseEndEvent,
     ProviderResponseStartEvent,
@@ -27,7 +27,7 @@ from ai.events import (
     ProviderTextDeltaEvent,
     ProviderThinkingDeltaEvent,
 )
-from ai.provider import CancellationToken, ModelProvider
+from ollama.provider import CancellationToken, ModelProvider
 
 
 async def run_agent_loop(

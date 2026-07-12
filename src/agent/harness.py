@@ -9,7 +9,7 @@ from agent.events import AgentEvent, MessageEndEvent, MessageStartEvent, QueueUp
 from agent.loop import run_agent_loop
 from agent.messages import AgentMessage, AssistantMessage, ToolResultMessage, UserMessage
 from agent.tools import AgentTool
-from ai.provider import ModelProvider
+from ollama.provider import ModelProvider
 
 EventListener = Callable[[AgentEvent], Awaitable[None] | None]
 QueueMode = Literal["one_at_a_time", "all"]

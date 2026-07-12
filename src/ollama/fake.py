@@ -2,8 +2,8 @@ from collections.abc import AsyncIterator, Iterable
 
 from agent.messages import AgentMessage
 from agent.tools import AgentTool
-from ai.events import ProviderEvent
-from ai.provider import CancellationToken
+from ollama.events import ProviderEvent
+from ollama.provider import CancellationToken
 
 
 class FakeProvider:

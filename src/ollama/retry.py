@@ -1,8 +1,8 @@
 from asyncio import sleep
 
 from agent.types import JSONValue
-from ai.events import ProviderRetryEvent
-from ai.provider import CancellationToken
+from ollama.events import ProviderRetryEvent
+from ollama.provider import CancellationToken
 
 RETRY_POLL_SECONDS = 0.05
 RETRY_BASE_DELAY_SECONDS = 0.25

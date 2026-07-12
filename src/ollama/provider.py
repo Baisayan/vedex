@@ -3,7 +3,7 @@ from typing import Protocol
 
 from agent.messages import AgentMessage
 from agent.tools import AgentTool
-from ai.events import ProviderEvent
+from ollama.events import ProviderEvent
 
 
 class CancellationToken(Protocol):

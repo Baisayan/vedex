@@ -9,8 +9,8 @@ import httpx
 from agent.messages import AgentMessage, AssistantMessage, ToolResultMessage, UserMessage
 from agent.tools import AgentTool, ToolCall
 from agent.types import JSONValue
-from ai.env import OpenAICompatibleConfig
-from ai.events import (
+from ollama.env import OpenAICompatibleConfig
+from ollama.events import (
     ProviderErrorEvent,
     ProviderEvent,
     ProviderResponseEndEvent,
@@ -19,8 +19,8 @@ from ai.events import (
     ProviderThinkingDeltaEvent,
     ProviderToolCallEvent,
 )
-from ai.provider import CancellationToken
-from ai.retry import provider_retry_event, retry_delay_seconds, wait_for_retry
+from ollama.provider import CancellationToken
+from ollama.retry import provider_retry_event, retry_delay_seconds, wait_for_retry
 
 
 class OpenAICompatibleProvider:
