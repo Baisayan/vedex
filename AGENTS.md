@@ -16,8 +16,6 @@ coding     CLI application, resources, prompts, skills, commands
 
 The core agent package must remain independent of CLI concerns, prompt loading, session locations, and application-specific resources.
 
-Ollama is a first-class dependency of the architecture.
-
 ---
 
 # Ollama Integration
@@ -33,12 +31,6 @@ http://localhost:11434
 Do not implement installation, startup, or lifecycle management for Ollama.
 
 Use native endpoints whenever possible.
-
-Examples include:
-
-- `/api/chat`
-- `/api/tags`
-- `/api/show`
 
 ---
 

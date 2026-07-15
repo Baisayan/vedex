@@ -9,7 +9,6 @@ from agent.events import (
     MessageEndEvent,
     MessageStartEvent,
     QueueUpdateEvent,
-    RetryEvent,
     ThinkingDeltaEvent,
     ToolExecutionEndEvent,
     ToolExecutionStartEvent,
@@ -19,20 +18,20 @@ from agent.events import (
 from agent.messages import AgentMessage, AssistantMessage, ToolResultMessage
 from agent.tools import AgentTool, AgentToolResult, ToolCall
 from agent.types import JSONValue
-from ollama.events import (
+from ollama.chat import (
+    OllamaProvider,
     ProviderErrorEvent,
     ProviderResponseEndEvent,
     ProviderResponseStartEvent,
-    ProviderRetryEvent,
     ProviderTextDeltaEvent,
     ProviderThinkingDeltaEvent,
 )
-from ollama.provider import CancellationToken, ModelProvider
+from ollama.client import CancellationToken
 
 
 async def run_agent_loop(
     *,
-    provider: ModelProvider,
+    provider: OllamaProvider,
     model: str,
     system: str,
     messages: list[AgentMessage],
@@ -76,14 +75,6 @@ async def run_agent_loop(
                 yield MessageDeltaEvent(delta=provider_event.delta)
             elif isinstance(provider_event, ProviderThinkingDeltaEvent):
                 yield ThinkingDeltaEvent(delta=provider_event.delta)
-            elif isinstance(provider_event, ProviderRetryEvent):
-                yield RetryEvent(
-                    attempt=provider_event.attempt,
-                    max_attempts=provider_event.max_attempts,
-                    delay_seconds=provider_event.delay_seconds,
-                    message=provider_event.message,
-                    data=provider_event.data,
-                )
             elif isinstance(provider_event, ProviderResponseEndEvent):
                 assistant_message = provider_event.message
                 messages.append(assistant_message)

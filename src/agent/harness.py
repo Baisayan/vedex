@@ -9,7 +9,7 @@ from agent.events import AgentEvent, MessageEndEvent, MessageStartEvent, QueueUp
 from agent.loop import run_agent_loop
 from agent.messages import AgentMessage, AssistantMessage, ToolResultMessage, UserMessage
 from agent.tools import AgentTool
-from ollama.provider import ModelProvider
+from ollama.chat import OllamaProvider
 
 EventListener = Callable[[AgentEvent], Awaitable[None] | None]
 QueueMode = Literal["one_at_a_time", "all"]
@@ -27,7 +27,7 @@ class QueuedMessages:
 
 @dataclass(slots=True)
 class AgentHarnessConfig:
-    provider: ModelProvider
+    provider: OllamaProvider
     model: str
     system: str
     tools: list[AgentTool] = field(default_factory=list)
