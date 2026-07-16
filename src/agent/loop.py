@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from typing import Protocol
 
 from agent.events import (
     AgentEndEvent,
@@ -8,6 +9,12 @@ from agent.events import (
     MessageDeltaEvent,
     MessageEndEvent,
     MessageStartEvent,
+    ProviderErrorEvent,
+    ProviderEvent,
+    ProviderResponseEndEvent,
+    ProviderResponseStartEvent,
+    ProviderTextDeltaEvent,
+    ProviderThinkingDeltaEvent,
     QueueUpdateEvent,
     ThinkingDeltaEvent,
     ToolExecutionEndEvent,
@@ -17,21 +24,24 @@ from agent.events import (
 )
 from agent.messages import AgentMessage, AssistantMessage, ToolResultMessage
 from agent.tools import AgentTool, AgentToolResult, ToolCall
-from agent.types import JSONValue
-from ollama.chat import (
-    OllamaProvider,
-    ProviderErrorEvent,
-    ProviderResponseEndEvent,
-    ProviderResponseStartEvent,
-    ProviderTextDeltaEvent,
-    ProviderThinkingDeltaEvent,
-)
-from ollama.client import CancellationToken
+from agent.types import CancellationToken, JSONValue
+
+
+class Provider(Protocol):
+    def stream_response(
+        self,
+        *,
+        model: str,
+        system: str,
+        messages: list[AgentMessage],
+        tools: list[AgentTool],
+        signal: CancellationToken | None = None,
+    ) -> AsyncIterator[ProviderEvent]: ...
 
 
 async def run_agent_loop(
     *,
-    provider: OllamaProvider,
+    provider: Provider,
     model: str,
     system: str,
     messages: list[AgentMessage],

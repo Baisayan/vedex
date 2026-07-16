@@ -57,22 +57,16 @@ def _parse_model_info(value: Any) -> OllamaModelInfo | None:
     if not isinstance(value, dict):
         return None
 
-    name = value.get("name")
-    if not isinstance(name, str) or not name:
-        name = value.get("model")
+    name = value.get("name") or value.get("model")
     if not isinstance(name, str) or not name:
         return None
 
     context_length: int | None = None
     details = value.get("details")
     if isinstance(details, dict):
-        raw_context_length = details.get("context_length")
-        if (
-            isinstance(raw_context_length, int)
-            and not isinstance(raw_context_length, bool)
-            and raw_context_length > 0
-        ):
-            context_length = raw_context_length
+        raw = details.get("context_length")
+        if isinstance(raw, int) and raw > 0:
+            context_length = raw
 
     raw_capabilities = value.get("capabilities")
     capabilities = (

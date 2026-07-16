@@ -1,98 +1,27 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Literal, Protocol
+from typing import assert_never
 from uuid import uuid4
 
 import httpx
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import ValidationError
 
+from agent.events import (
+    ProviderErrorEvent,
+    ProviderEvent,
+    ProviderResponseEndEvent,
+    ProviderResponseStartEvent,
+    ProviderTextDeltaEvent,
+    ProviderThinkingDeltaEvent,
+)
 from agent.messages import AgentMessage, AssistantMessage, ToolResultMessage, UserMessage
-from agent.tools import AgentTool
-from agent.tools import ToolCall as AgentToolCall
-from agent.types import JSONValue
-from ollama.client import CancellationToken, OllamaClient
+from agent.tools import AgentTool, ToolCall
+from agent.types import CancellationToken
+from ollama.client import OllamaClient
 from ollama.models import get_model_info
 from ollama.types import ChatChunk, ChatRequest, OllamaMessage, OllamaTool, OllamaToolCall
 
-
-# ── Protocol ──────────────────────────────────────────────────────────────────
-
-class OllamaProvider(Protocol):
-    def stream_response(
-        self,
-        *,
-        model: str,
-        system: str,
-        messages: list[AgentMessage],
-        tools: list[AgentTool],
-        signal: CancellationToken | None = None,
-    ) -> AsyncIterator[ProviderEvent]:
-        ...
-
-
-# ── Provider events ───────────────────────────────────────────────────────────
-
-class ProviderResponseStartEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    type: Literal["response_start"] = "response_start"
-    model: str
-
-
-class ProviderRetryEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    type: Literal["retry"] = "retry"
-    attempt: int
-    max_attempts: int
-    delay_seconds: float
-    message: str
-    data: dict[str, JSONValue] | None = None
-
-
-class ProviderTextDeltaEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    type: Literal["text_delta"] = "text_delta"
-    delta: str
-
-
-class ProviderThinkingDeltaEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    type: Literal["thinking_delta"] = "thinking_delta"
-    delta: str
-
-
-class ProviderToolCallEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    type: Literal["tool_call"] = "tool_call"
-    tool_call: AgentToolCall
-
-
-class ProviderResponseEndEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    type: Literal["response_end"] = "response_end"
-    message: AssistantMessage
-    finish_reason: str | None = None
-
-
-class ProviderErrorEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    type: Literal["error"] = "error"
-    message: str
-    data: dict[str, JSONValue] | None = None
-
-
-type ProviderEvent = (
-    ProviderResponseStartEvent
-    | ProviderRetryEvent
-    | ProviderTextDeltaEvent
-    | ProviderThinkingDeltaEvent
-    | ProviderToolCallEvent
-    | ProviderResponseEndEvent
-    | ProviderErrorEvent
-)
-
-
-# ── OllamaChat ────────────────────────────────────────────────────────────────
 
 class OllamaChat:
     def __init__(self, client: OllamaClient) -> None:
@@ -126,7 +55,7 @@ class OllamaChat:
                 yield ProviderResponseStartEvent(model=model)
 
                 content_parts: list[str] = []
-                tool_calls: list[AgentToolCall] = []
+                tool_calls: list[ToolCall] = []
                 finish_reason: str | None = None
                 completed = False
 
@@ -178,9 +107,6 @@ class OllamaChat:
                         message="Ollama stream ended before the final response"
                     )
                     return
-
-                for call in tool_calls:
-                    yield ProviderToolCallEvent(tool_call=call)
 
                 yield ProviderResponseEndEvent(
                     message=AssistantMessage(
@@ -244,10 +170,10 @@ def _to_ollama_message(message: AgentMessage) -> OllamaMessage:
     if isinstance(message, ToolResultMessage):
         return OllamaMessage(role="tool", content=message.content)
 
-    return OllamaMessage(role="user", content=str(message))
+    assert_never(message)
 
 
-def _parse_tool_call(raw: dict[str, object]) -> AgentToolCall:
+def _parse_tool_call(raw: dict[str, object]) -> ToolCall:
     func = raw.get("function")
     if not isinstance(func, dict):
         raise ValueError("Ollama returned a malformed tool call")
@@ -257,7 +183,7 @@ def _parse_tool_call(raw: dict[str, object]) -> AgentToolCall:
     arguments = func.get("arguments", {})
     if not isinstance(arguments, dict):
         raise ValueError(f"Ollama returned invalid arguments for tool: {name}")
-    return AgentToolCall(
+    return ToolCall(
         id=f"call-{uuid4().hex[:8]}",
         name=name,
         arguments=arguments,

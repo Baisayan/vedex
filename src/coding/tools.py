@@ -11,7 +11,7 @@ from pathlib import Path
 from time import monotonic
 from typing import Any
 
-from agent.tools import AgentTool, AgentToolResult, ToolCancellationToken, ToolExecutor
+from agent.tools import AgentTool, AgentToolResult, CancellationToken, ToolExecutor
 from agent.types import JSONValue
 
 DEFAULT_MAX_OUTPUT_BYTES = 50 * 1024
@@ -87,7 +87,7 @@ def create_read_tool_definition(*, cwd: str | Path | None = None) -> ToolDefinit
 
     async def execute(
         arguments: Mapping[str, JSONValue],
-        signal: ToolCancellationToken | None = None,
+        signal: CancellationToken | None = None,
     ) -> AgentToolResult:
         del signal
         raw_path = _str_arg(arguments, "path")
@@ -213,7 +213,7 @@ def create_write_tool_definition(*, cwd: str | Path | None = None) -> ToolDefini
 
     async def execute(
         arguments: Mapping[str, JSONValue],
-        signal: ToolCancellationToken | None = None,
+        signal: CancellationToken | None = None,
     ) -> AgentToolResult:
         del signal
         path = _path_arg(arguments, "path", cwd=root)
@@ -260,7 +260,7 @@ def create_edit_tool_definition(*, cwd: str | Path | None = None) -> ToolDefinit
 
     async def execute(
         arguments: Mapping[str, JSONValue],
-        signal: ToolCancellationToken | None = None,
+        signal: CancellationToken | None = None,
     ) -> AgentToolResult:
         del signal
         prepared = _prepare_edit_arguments(arguments)
@@ -360,7 +360,7 @@ def create_bash_tool_definition(
 
     async def execute(
         arguments: Mapping[str, JSONValue],
-        signal: ToolCancellationToken | None = None,
+        signal: CancellationToken | None = None,
     ) -> AgentToolResult:
         command = _str_arg(arguments, "command")
         shell_command = _prefixed_shell_command(command, prefix)
@@ -508,7 +508,7 @@ async def _communicate_with_cancellation(
     process: asyncio.subprocess.Process,
     *,
     timeout: float | None,
-    signal: ToolCancellationToken | None,
+    signal: CancellationToken | None,
 ) -> tuple[bytes, bytes | None, bool, bool]:
     communicate = asyncio.create_task(process.communicate())
     cancel_watch: asyncio.Task[None] | None = None
@@ -547,7 +547,7 @@ async def _communicate_with_cancellation(
             cancel_watch.cancel()
 
 
-async def _wait_for_cancel(signal: ToolCancellationToken) -> None:
+async def _wait_for_cancel(signal: CancellationToken) -> None:
     while not signal.is_cancelled():
         await asyncio.sleep(0.05)
 

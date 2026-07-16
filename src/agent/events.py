@@ -1,7 +1,7 @@
 from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
-from agent.messages import AgentMessage
+from agent.messages import AgentMessage, AssistantMessage
 from agent.tools import AgentToolResult, ToolCall
 from agent.types import JSONValue
 
@@ -30,17 +30,6 @@ class TurnEndEvent(BaseModel):
 
     type: Literal["turn_end"] = "turn_end"
     turn: int
-
-
-class RetryEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    type: Literal["retry"] = "retry"
-    attempt: int
-    max_attempts: int
-    delay_seconds: float
-    message: str
-    data: dict[str, JSONValue] | None = None
 
 
 class QueueUpdateEvent(BaseModel):
@@ -111,13 +100,56 @@ class ErrorEvent(BaseModel):
     data: dict[str, JSONValue] | None = None
 
 
+# ── Provider events ───────────────────────────────────────────────────────────
+
+
+class ProviderResponseStartEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["response_start"] = "response_start"
+    model: str
+
+
+class ProviderTextDeltaEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["text_delta"] = "text_delta"
+    delta: str
+
+
+class ProviderThinkingDeltaEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["thinking_delta"] = "thinking_delta"
+    delta: str
+
+
+class ProviderResponseEndEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["response_end"] = "response_end"
+    message: AssistantMessage
+    finish_reason: str | None = None
+
+
+class ProviderErrorEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["error"] = "error"
+    message: str
+    data: dict[str, JSONValue] | None = None
+
+
+type ProviderEvent = (
+    ProviderResponseStartEvent
+    | ProviderTextDeltaEvent
+    | ProviderThinkingDeltaEvent
+    | ProviderResponseEndEvent
+    | ProviderErrorEvent
+)
+
+
 type AgentEvent = (
     AgentStartEvent
     | AgentEndEvent
     | TurnStartEvent
     | TurnEndEvent
     | QueueUpdateEvent
-    | RetryEvent
     | MessageStartEvent
     | MessageDeltaEvent
     | ThinkingDeltaEvent

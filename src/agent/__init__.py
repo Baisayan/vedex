@@ -7,7 +7,6 @@ from agent.events import (
     MessageEndEvent,
     MessageStartEvent,
     QueueUpdateEvent,
-    RetryEvent,
     ThinkingDeltaEvent,
     ToolExecutionEndEvent,
     ToolExecutionStartEvent,
@@ -39,7 +38,7 @@ from agent.session import (
     ThinkingLevelChangeEntry,
 )
 from agent.tools import AgentTool, AgentToolResult, ToolCall, ToolExecutor
-from agent.types import JSONObject, JSONPrimitive, JSONValue
+from agent.types import CancellationToken, JSONObject, JSONPrimitive, JSONValue
 
 __all__ = [
     "AgentEndEvent",
@@ -52,6 +51,7 @@ __all__ = [
     "AgentToolResult",
     "AssistantMessage",
     "BranchSummaryEntry",
+    "CancellationToken",
     "CompactionEntry",
     "CustomEntry",
     "ErrorEvent",
@@ -69,7 +69,6 @@ __all__ = [
     "ModelChangeEntry",
     "QueuedMessages",
     "QueueUpdateEvent",
-    "RetryEvent",
     "SessionEntry",
     "SessionInfoEntry",
     "SessionState",

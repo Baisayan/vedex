@@ -3,9 +3,11 @@ from __future__ import annotations
 from asyncio import sleep
 from collections.abc import AsyncIterator
 from json import JSONDecodeError, loads
-from typing import Any, Protocol
+from typing import Any
 
 import httpx
+
+from agent.types import CancellationToken
 
 OLLAMA_HOST = "http://localhost:11434"
 
@@ -13,11 +15,6 @@ _RETRY_BASE_DELAY = 0.5
 _RETRY_MAX_DELAY = 8.0
 _RETRY_POLL = 0.05
 _TRANSIENT_STATUSES = {408, 429, 500, 502, 503, 504}
-
-
-class CancellationToken(Protocol):
-    def is_cancelled(self) -> bool:
-        ...
 
 
 class OllamaClient:
@@ -46,7 +43,8 @@ class OllamaClient:
         client = self._client()
         response = await client.get(f"{self._host}{path}")
         response.raise_for_status()
-        return response.json()
+        result: dict[str, Any] = response.json()
+        return result
 
     def stream(
         self,
