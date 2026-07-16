@@ -1,7 +1,5 @@
 """All paths for VedeX user and projects."""
 
-from __future__ import annotations
-
 import re
 from dataclasses import dataclass, field
 from hashlib import sha256

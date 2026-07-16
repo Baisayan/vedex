@@ -67,7 +67,6 @@ def format_available_tools(tools: Sequence[AgentTool]) -> str:
 def collect_prompt_guidelines(
     tools: Sequence[AgentTool], extra_guidelines: Sequence[str] = ()
 ) -> list[str]:
-    names = {tool.name for tool in tools}
     guidelines: list[str] = []
     seen: set[str] = set()
 
@@ -78,14 +77,7 @@ def collect_prompt_guidelines(
         seen.add(normalized)
         guidelines.append(normalized)
 
-    has_bash = "bash" in names
-    has_exploration_tools = bool({"grep", "find", "ls"} & names)
-    if has_bash and not has_exploration_tools:
-        add("Use bash for file operations like ls, rg, find")
-    elif has_bash and has_exploration_tools:
-        add(
-            "Prefer grep/find/ls tools over bash for file exploration (faster, respects .gitignore)"
-        )
+    add("Use bash for file operations like ls, rg, find")
 
     for tool in tools:
         for guideline in tool.prompt_guidelines:

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -8,7 +6,7 @@ from coding.paths import VedexPaths
 
 
 class ResourceError(ValueError):
-    """Raised when resources are invalid or cannot be expanded."""
+    """Raised when resources are invalid."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,13 +47,12 @@ class ResourcePaths:
         paths = self._paths()
         dirs = [self.skills_dir]
         if self.agents_root is not None:
-            dirs.extend([self.agents_root / "skills", self.agents_root])
+            dirs.append(self.agents_root / "skills")
         if self.cwd is not None:
             dirs.extend(
                 [
                     paths.project_skills_dir(self.cwd),
                     paths.project_agents_skills_dir(self.cwd),
-                    paths.project_agents_dir(self.cwd),
                 ]
             )
         return tuple(_dedupe_paths(dirs))
