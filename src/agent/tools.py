@@ -5,19 +5,14 @@ from dataclasses import dataclass
 from typing import Protocol
 from pydantic import BaseModel, ConfigDict, Field
 
-from agent.types import JSONValue
-
-
-class ToolCancellationToken(Protocol):
-    def is_cancelled(self) -> bool:
-        ...
+from agent.types import CancellationToken, JSONValue
 
 
 class ToolExecutor(Protocol):
     def __call__(
         self,
         arguments: Mapping[str, JSONValue],
-        signal: ToolCancellationToken | None = None,
+        signal: CancellationToken | None = None,
     ) -> Awaitable[AgentToolResult]:
         ...
 
@@ -54,6 +49,6 @@ class AgentTool:
     async def execute(
         self,
         arguments: Mapping[str, JSONValue],
-        signal: ToolCancellationToken | None = None,
+        signal: CancellationToken | None = None,
     ) -> AgentToolResult:
         return await self.executor(arguments, signal=signal)

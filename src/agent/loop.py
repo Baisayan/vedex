@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from typing import Protocol
 
 from agent.events import (
     AgentEndEvent,
@@ -8,8 +9,13 @@ from agent.events import (
     MessageDeltaEvent,
     MessageEndEvent,
     MessageStartEvent,
+    ProviderErrorEvent,
+    ProviderEvent,
+    ProviderResponseEndEvent,
+    ProviderResponseStartEvent,
+    ProviderTextDeltaEvent,
+    ProviderThinkingDeltaEvent,
     QueueUpdateEvent,
-    RetryEvent,
     ThinkingDeltaEvent,
     ToolExecutionEndEvent,
     ToolExecutionStartEvent,
@@ -18,21 +24,24 @@ from agent.events import (
 )
 from agent.messages import AgentMessage, AssistantMessage, ToolResultMessage
 from agent.tools import AgentTool, AgentToolResult, ToolCall
-from agent.types import JSONValue
-from ai.events import (
-    ProviderErrorEvent,
-    ProviderResponseEndEvent,
-    ProviderResponseStartEvent,
-    ProviderRetryEvent,
-    ProviderTextDeltaEvent,
-    ProviderThinkingDeltaEvent,
-)
-from ai.provider import CancellationToken, ModelProvider
+from agent.types import CancellationToken, JSONValue
+
+
+class Provider(Protocol):
+    def stream_response(
+        self,
+        *,
+        model: str,
+        system: str,
+        messages: list[AgentMessage],
+        tools: list[AgentTool],
+        signal: CancellationToken | None = None,
+    ) -> AsyncIterator[ProviderEvent]: ...
 
 
 async def run_agent_loop(
     *,
-    provider: ModelProvider,
+    provider: Provider,
     model: str,
     system: str,
     messages: list[AgentMessage],
@@ -76,14 +85,6 @@ async def run_agent_loop(
                 yield MessageDeltaEvent(delta=provider_event.delta)
             elif isinstance(provider_event, ProviderThinkingDeltaEvent):
                 yield ThinkingDeltaEvent(delta=provider_event.delta)
-            elif isinstance(provider_event, ProviderRetryEvent):
-                yield RetryEvent(
-                    attempt=provider_event.attempt,
-                    max_attempts=provider_event.max_attempts,
-                    delay_seconds=provider_event.delay_seconds,
-                    message=provider_event.message,
-                    data=provider_event.data,
-                )
             elif isinstance(provider_event, ProviderResponseEndEvent):
                 assistant_message = provider_event.message
                 messages.append(assistant_message)
