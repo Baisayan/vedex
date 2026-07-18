@@ -4,7 +4,7 @@ import string
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from agent import (
     AgentEvent,
@@ -40,13 +40,11 @@ from coding.context import discover_project_context_with_diagnostics
 from coding.context_window import (
     DEFAULT_COMPACTION_KEEP_RECENT_TOKENS,
     DEFAULT_CONTEXT_WINDOW_TOKENS,
-    SUMMARIZATION_SYSTEM_PROMPT,
     ContextUsageEstimate,
     auto_compaction_threshold_for_context_window,
-    build_compaction_summary_prompt,
+    build_truncation_summary,
     estimate_context_usage,
     estimate_message_tokens,
-    summarize_messages_for_compaction,
 )
 from coding.diagnostics import (
     AgentCallDiagnosticContext,
@@ -258,31 +256,25 @@ class CodingSession:
 
     @property
     def cwd(self) -> Path:
-        """Return the session working directory."""
         return self._config.cwd
 
     @property
     def model(self) -> str:
-        """Return the active model for this session."""
         return self._harness.config.model
 
     @property
     def tools(self) -> tuple[AgentTool, ...]:
-        """Return the tools available to the agent."""
         return tuple(self._harness.config.tools)
 
     @property
     def messages(self) -> tuple[AgentMessage, ...]:
-        """Return the restored/current transcript."""
         return self._harness.messages
 
     @property
     def state(self) -> SessionState:
-        """Return the last replayed durable session state."""
         return self._state
 
     async def tree_choices(self) -> tuple[SessionTreeChoice, ...]:
-        """Return branchable session entries for a tree picker."""
         entries = await self._read_session_entries()
         branch_indents = _tree_branch_indents(entries)
         return tuple(
@@ -301,10 +293,7 @@ class CodingSession:
         entry_id: str,
         *,
         summarize: bool = False,
-        custom_instructions: str | None = None,
-        replace_instructions: bool = False,
     ) -> SessionTreeBranchResult:
-        """Move the active leaf to a previous entry, preserving existing history."""
         if self._harness.is_running:
             raise RuntimeError(TREE_RUNNING_MESSAGE)
         entries = await self._read_session_entries()
@@ -325,11 +314,7 @@ class CodingSession:
                 self._last_parent_id,
             )
             if abandoned_messages:
-                summary = await self._summarize_branch_messages(
-                    abandoned_messages,
-                    custom_instructions=custom_instructions,
-                    replace_instructions=replace_instructions,
-                )
+                summary = build_truncation_summary(abandoned_messages)
                 summary_entry = BranchSummaryEntry(
                     parent_id=entry_id,
                     branch_root_id=entry_id,
@@ -358,32 +343,26 @@ class CodingSession:
 
     @property
     def storage(self) -> SessionStorage:
-        """Return the backing session storage."""
         return self._config.storage
 
     @property
     def skills(self) -> tuple[Skill, ...]:
-        """Return loaded skills."""
         return self._skills
 
     @property
     def prompt_templates(self) -> tuple[PromptTemplate, ...]:
-        """Return loaded prompt templates."""
         return self._prompt_templates
 
     @property
     def context_files(self) -> tuple[ProjectContextFile, ...]:
-        """Return active project context files."""
         return self._context_files
 
     @property
     def context_token_estimate(self) -> int:
-        """Return a rough token estimate for the active provider context."""
         return self.context_usage.total_tokens
 
     @property
     def context_usage(self) -> ContextUsageEstimate:
-        """Return structured context accounting for the active provider context."""
         if self._context_usage_cache is None:
             self._context_usage_cache = estimate_context_usage(
                 system=self._harness.config.system,
@@ -394,12 +373,10 @@ class CodingSession:
 
     @property
     def system_prompt(self) -> str:
-        """Return the effective system prompt sent to the model."""
         return self._harness.config.system
 
     @property
     def auto_compact_token_threshold(self) -> int | None:
-        """Return the effective automatic compaction threshold, if any."""
         if not self._auto_compact_enabled:
             return None
         if self._auto_compact_token_threshold is not None:
@@ -408,27 +385,22 @@ class CodingSession:
 
     @property
     def context_window_tokens(self) -> int:
-        """Return the active model's context window, using Ollama metadata or fallback."""
-        return getattr(self, '_ollama_context_length', DEFAULT_CONTEXT_WINDOW_TOKENS)
+        return self._ollama_context_length
 
     @property
     def command_registry(self) -> CommandRegistry:
-        """Return the slash-command registry used by this session."""
         return self._command_registry
 
     @property
     def resource_diagnostics(self) -> tuple[ResourceDiagnostic, ...]:
-        """Return non-fatal resource discovery diagnostics."""
         return self._resource_diagnostics
 
     @property
     def session_id(self) -> str | None:
-        """Return this session's manager id, if indexed."""
         return self._config.session_id
 
     @property
     def session_title(self) -> str | None:
-        """Return this session's indexed human-friendly title, if named."""
         if self._config.session_id is None or self._config.session_manager is None:
             return None
         record = self._config.session_manager.get_session(self._config.session_id)
@@ -438,58 +410,46 @@ class CodingSession:
 
     @property
     def session_manager(self) -> SessionManager | None:
-        """Return the session manager, if available."""
         return self._config.session_manager
 
     @property
     def is_running(self) -> bool:
-        """Return whether this session currently has an active agent run."""
         return self._harness.is_running
 
     @property
     def queued_messages(self) -> QueuedMessages:
-        """Return queued steering and follow-up messages."""
         return self._harness.queued_messages
 
     @property
     def queued_steering_messages(self) -> tuple[str, ...]:
-        """Return queued steering message text for UI display."""
         return tuple(message.content for message in self._harness.queued_messages.steering)
 
     @property
     def queued_follow_up_messages(self) -> tuple[str, ...]:
-        """Return queued follow-up message text for UI display."""
         return tuple(message.content for message in self._harness.queued_messages.follow_up)
 
     @property
     def last_diagnostic_log_path(self) -> Path | None:
-        """Return the last diagnostic log path written by this session."""
         return self._last_diagnostic_log_path
 
     def cancel(self) -> None:
-        """Cancel the currently running agent turn, if any."""
         self._harness.cancel()
 
     def queue_update_event(self) -> QueueUpdateEvent:
-        """Return the current queue state as an agent event."""
         return self._harness.queue_update_event()
 
     def clear_queued_messages(self) -> QueuedMessages:
-        """Clear queued steering and follow-up messages."""
         return self._harness.clear_queues()
 
     def pop_latest_follow_up_message(self) -> str | None:
-        """Remove and return the most recently queued follow-up message."""
         message = self._harness.pop_latest_follow_up()
         return None if message is None else message.content
 
     def pop_latest_steering_message(self) -> str | None:
-        """Remove and return the most recently queued steering message."""
         message = self._harness.pop_latest_steering()
         return None if message is None else message.content
 
     def set_model(self, model: str) -> None:
-        """Switch the active model for future turns."""
         self._harness.config.model = model
         if self._config.session_id is not None and self._config.session_manager is not None:
             self._config.session_manager.touch_session(
@@ -498,7 +458,6 @@ class CodingSession:
             )
 
     def reload(self) -> CodingReloadSummary:
-        """Reload local coding resources and project context for future turns."""
         before_skills = _skill_signatures(self._skills)
         before_prompt_templates = _prompt_template_signatures(self._prompt_templates)
         before_context_files = _context_file_signatures(self._context_files)
@@ -557,7 +516,6 @@ class CodingSession:
         )
 
     async def resume(self, session_id: str) -> str:
-        """Replace this session's active state with another indexed session."""
         manager = self._config.session_manager
         if manager is None:
             raise ValueError("Session manager is not available")
@@ -584,24 +542,10 @@ class CodingSession:
                 shell_command_prefix=self._config.shell_command_prefix,
             )
         )
-        self._config = replacement._config
-        self._state = replacement._state
-        self._harness = replacement._harness
-        self._invalidate_context_usage_cache()
-        self._last_parent_id = replacement._last_parent_id
-        self._skills = replacement._skills
-        self._prompt_templates = replacement._prompt_templates
-        self._context_files = replacement._context_files
-        self._resource_diagnostics = replacement._resource_diagnostics
-        self._command_registry = replacement._command_registry
-        self._resource_paths = replacement._resource_paths
-        self._auto_compact_token_threshold = replacement._auto_compact_token_threshold
-        self._auto_compact_enabled = replacement._auto_compact_enabled
-        self._ollama_context_length = replacement._ollama_context_length
+        self._adopt_replacement(replacement)
         return f"Resumed session: {record.id}"
 
     async def new_session(self) -> str:
-        """Replace this session's active state with a pending unindexed session."""
         manager = self._config.session_manager
         if manager is None:
             raise ValueError("Session manager is not available")
@@ -623,6 +567,10 @@ class CodingSession:
                 index_on_first_persist=True,
             )
         )
+        self._adopt_replacement(replacement)
+        return f"Started new session: {record.id}"
+
+    def _adopt_replacement(self, replacement: CodingSession) -> None:
         self._config = replacement._config
         self._state = replacement._state
         self._harness = replacement._harness
@@ -637,15 +585,10 @@ class CodingSession:
         self._auto_compact_token_threshold = replacement._auto_compact_token_threshold
         self._auto_compact_enabled = replacement._auto_compact_enabled
         self._ollama_context_length = replacement._ollama_context_length
-        return f"Started new session: {record.id}"
 
-    async def compact(self, instructions: str | None = None) -> str:
-        """Generate a manual compaction summary and rebuild active context."""
+    async def compact(self) -> str:
         plan = self._manual_compaction_plan()
-        summary = await self._generate_compaction_summary(
-            plan.messages_to_summarize,
-            custom_instructions=instructions,
-        )
+        summary = build_truncation_summary(plan.messages_to_summarize)
         compaction = await self._append_compaction(
             summary,
             replace_entry_ids=plan.replace_entry_ids,
@@ -653,23 +596,16 @@ class CodingSession:
         return f"Compacted {len(compaction.replaces_entry_ids)} context entries."
 
     async def aclose(self) -> None:
-        """Close resources held by this coding session."""
-        provider = self._harness.config.provider
+        provider: Any = self._harness.config.provider
         if hasattr(provider, 'aclose'):
             await provider.aclose()
 
-    def handle_command(self, text: str) -> CommandResult:
-        """Handle coding-session slash commands.
-
-        Prompt-template slash commands are expansion directives, so they remain
-        unhandled here and flow through `prompt()` for on-the-fly replacement.
-        """
+    async def handle_command(self, text: str) -> CommandResult:
         if expand_prompt_template_command(text, self._prompt_templates) is not None:
             return CommandResult(handled=False)
-        return self._command_registry.execute(self, text)
+        return await self._command_registry.execute(self, text)
 
     def ensure_session_indexed(self) -> None:
-        """Persist pending session metadata and add this session to the resume index."""
         if self._config.session_id is None or self._config.session_manager is None:
             return
         if self._config.session_manager.get_session(self._config.session_id) is None:
@@ -682,7 +618,6 @@ class CodingSession:
         self._ensure_session_file_initialized()
 
     def expand_prompt_text(self, text: str) -> str:
-        """Expand prompt text using loaded markdown resources."""
         expanded_prompt = expand_prompt_template_command(text, self._prompt_templates)
         if expanded_prompt is not None:
             return expanded_prompt
@@ -695,7 +630,6 @@ class CodingSession:
         *,
         add_to_context: bool,
     ) -> TerminalCommandResult:
-        """Run a shell command in the session cwd, optionally adding output to context."""
         normalized_command = command.strip()
         if not normalized_command:
             raise ValueError("Terminal command cannot be empty")
@@ -737,7 +671,6 @@ class CodingSession:
         *,
         streaming_behavior: StreamingBehavior | None = None,
     ) -> AsyncIterator[AgentEvent]:
-        """Append a user prompt, run the agent, and persist new messages."""
         context = self._diagnostic_context()
         try:
             expanded_content = self.expand_prompt_text(content)
@@ -821,7 +754,6 @@ class CodingSession:
             raise
 
     async def continue_(self) -> AsyncIterator[AgentEvent]:
-        """Continue the agent from restored state and persist new messages."""
         context = self._diagnostic_context()
         persisted_count = len(self._harness.messages)
         try:
@@ -858,14 +790,6 @@ class CodingSession:
         )
 
     async def _persist_loaded_interrupted_tool_repairs(self) -> None:
-        """Persist repairs for loaded sessions with dangling tool calls.
-
-        Older Tau builds repaired interrupted tool-call transcripts only in the
-        in-memory harness. If the app was later resumed from JSONL, the synthetic
-        tool result was absent and providers rejected the whole transcript. Repair
-        the active branch on load so resume/tree branches are durable and
-        provider-safe.
-        """
         repair = _interrupted_tool_repair_plan(
             self._state.messages,
             context_entry_ids=self._state.context_entry_ids,
@@ -895,12 +819,6 @@ class CodingSession:
         )
 
     async def _persist_messages_since(self, persisted_count: int) -> int:
-        """Persist completed harness messages after ``persisted_count``.
-
-        Message lifecycle events are the durable-message boundary. Each persisted
-        message advances the append-only tree and records a leaf pointer so tree
-        navigation can observe the current branch while a run is still active.
-        """
         new_messages = self._harness.messages[persisted_count:]
         if not new_messages:
             return persisted_count
@@ -917,7 +835,6 @@ class CodingSession:
         return persisted_count + len(new_messages)
 
     def _invalidate_context_usage_cache(self) -> None:
-        """Mark context accounting dirty after transcript/system/tool changes."""
         self._context_usage_cache = None
 
     async def _refresh_persisted_state(self, *, leaf_id: str | None) -> None:
@@ -930,11 +847,9 @@ class CodingSession:
             )
 
     async def _read_session_entries(self) -> list[SessionEntry]:
-        """Read stored entries, detaching roots imported from external history."""
         return _detach_missing_parents(await self._config.storage.read_all())
 
     async def _append_session_entry(self, entry: SessionEntry) -> None:
-        """Append one durable entry after flushing deferred session metadata."""
         await self._ensure_session_initialized()
         await self._config.storage.append(entry)
 
@@ -977,7 +892,7 @@ class CodingSession:
     ) -> bool:
         try:
             return await self._maybe_auto_compact()
-        except Exception as exc:  # noqa: BLE001 - automatic compaction must not lose a turn
+        except Exception as exc: 
             self._last_diagnostic_log_path = self._diagnostic_logger.log_exception(
                 context=context,
                 phase=phase,
@@ -994,10 +909,10 @@ class CodingSession:
             plan = self._recent_preserving_compaction_plan()
             if plan is None:
                 return False
-            summary = await self._generate_compaction_summary(plan.messages_to_summarize)
+            summary = build_truncation_summary(plan.messages_to_summarize)
             await self._append_compaction(summary, replace_entry_ids=plan.replace_entry_ids)
             return True
-        except Exception as exc:  # noqa: BLE001 - the original overflow remains visible
+        except Exception as exc:
             self._last_diagnostic_log_path = self._diagnostic_logger.log_exception(
                 context=context,
                 phase="overflow_compact",
@@ -1015,15 +930,15 @@ class CodingSession:
             return
         try:
             title = await self._generate_session_name(first_message)
-        except Exception as exc:  # noqa: BLE001 - naming must not interrupt the agent turn
+        except Exception as exc:
             self._last_diagnostic_log_path = self._diagnostic_logger.log_exception(
                 context=context,
                 phase="auto_name_session",
                 exc=exc,
             )
-            title = _fallback_session_name(first_message)
+            title = _sanitize_session_name(first_message)
         if title is None:
-            title = _fallback_session_name(first_message)
+            title = _sanitize_session_name(first_message)
         if title is None:
             return
         self._set_auto_session_title(title)
@@ -1082,60 +997,9 @@ class CodingSession:
         plan = self._recent_preserving_compaction_plan()
         if plan is None:
             return False
-        summary = await self._generate_compaction_summary(plan.messages_to_summarize)
+        summary = build_truncation_summary(plan.messages_to_summarize)
         await self._append_compaction(summary, replace_entry_ids=plan.replace_entry_ids)
         return True
-
-    async def _generate_compaction_summary(
-        self,
-        messages: tuple[AgentMessage, ...],
-        *,
-        custom_instructions: str | None = None,
-    ) -> str:
-        prompt = build_compaction_summary_prompt(
-            messages,
-            custom_instructions=custom_instructions,
-        )
-        text_parts: list[str] = []
-        final_text: str | None = None
-        summary_messages: list[AgentMessage] = [UserMessage(content=prompt)]
-        async for event in self._harness.config.provider.stream_response(
-            model=self.model,
-            system=SUMMARIZATION_SYSTEM_PROMPT,
-            messages=summary_messages,
-            tools=[],
-        ):
-            if isinstance(event, ProviderTextDeltaEvent):
-                text_parts.append(event.delta)
-            elif isinstance(event, ProviderResponseEndEvent):
-                final_text = event.message.content
-            elif isinstance(event, ProviderErrorEvent):
-                details = f": {event.data}" if event.data is not None else ""
-                raise RuntimeError(f"Compaction summarization failed: {event.message}{details}")
-
-        summary = (final_text if final_text is not None else "".join(text_parts)).strip()
-        if not summary:
-            raise RuntimeError("Compaction summarization returned an empty summary")
-        return summary
-
-    async def _summarize_branch_messages(
-        self,
-        messages: tuple[AgentMessage, ...],
-        *,
-        custom_instructions: str | None = None,
-        replace_instructions: bool = False,
-    ) -> str:
-        try:
-            summary = await summarize_branch_messages_with_model(
-                provider=self._harness.config.provider,
-                model=self.model,
-                messages=messages,
-                custom_instructions=custom_instructions,
-                replace_instructions=replace_instructions,
-            )
-        except Exception:
-            summary = None
-        return summary or summarize_messages_for_compaction(messages)
 
     def _manual_compaction_plan(self) -> CompactionPlan:
         rows = self._active_context_rows()
@@ -1265,7 +1129,6 @@ def _is_context_overflow_error(event: ErrorEvent) -> bool:
 
 
 def _detach_missing_parents(entries: list[SessionEntry]) -> list[SessionEntry]:
-    """Return entries with dangling parent pointers detached from external history."""
     entry_ids = {entry.id for entry in entries}
     return [
         entry.model_copy(update={"parent_id": None})
@@ -1335,12 +1198,6 @@ def _ordered_tree_entries(entries: list[SessionEntry]) -> tuple[SessionEntry, ..
     expanded: set[str | None] = set()
 
     def append_descendants(root_parent_id: str | None) -> None:
-        # Iterative depth-first walk rather than recursion so a long session (a
-        # deep root-to-leaf entry chain) cannot exceed Python's recursion limit.
-        # `expanded` also makes a malformed parent cycle terminate instead of
-        # recursing forever. Emitting a node's direct children before descending,
-        # and pushing them reversed so the first child is processed next,
-        # preserves the original traversal order.
         stack: list[str | None] = [root_parent_id]
         while stack:
             parent_id = stack.pop()
@@ -1389,10 +1246,7 @@ def _tree_entry_title(entry: SessionEntry) -> str:
 
 
 def _message_text_preview(message: AgentMessage) -> str:
-    content = message.content
-    if isinstance(content, str):
-        return _short_preview(content)
-    return _short_preview(str(content))
+    return _short_preview(str(message.content))
 
 
 def _short_preview(text: str, *, limit: int = 72) -> str:
@@ -1435,10 +1289,6 @@ def _sanitize_session_name(text: str) -> str | None:
     return " ".join(words[:4])
 
 
-def _fallback_session_name(first_message: str) -> str | None:
-    return _sanitize_session_name(first_message)
-
-
 def _terminal_command_context_message(command: str, output: str) -> str:
     return (
         "Terminal command executed by the user.\n\n"
@@ -1448,7 +1298,6 @@ def _terminal_command_context_message(command: str, output: str) -> str:
 
 
 def parse_terminal_command(text: str) -> TerminalCommandRequest | None:
-    """Parse input-bar terminal command syntax."""
     stripped = text.strip()
     if stripped.startswith("!!"):
         command = stripped[2:].strip()
@@ -1597,17 +1446,14 @@ def _interrupted_tool_repair_plan(
 
 
 def default_session_path(cwd: Path) -> Path:
-    """Return the default user-home session path for a project cwd."""
     return VedexPaths().default_session_path(cwd)
 
 
 def jsonl_session_storage(path: str | Path) -> JsonlSessionStorage:
-    """Convenience factory for local JSONL coding-session storage."""
     return JsonlSessionStorage(path)
 
 
 def _append_session_entry_sync(storage: SessionStorage, entry: SessionEntry) -> None:
-    """Append an entry synchronously for slash commands that cannot await storage."""
     if isinstance(storage, JsonlSessionStorage):
         storage.path.parent.mkdir(parents=True, exist_ok=True)
         with storage.path.open("a", encoding="utf-8") as file:

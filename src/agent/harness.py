@@ -130,6 +130,11 @@ class AgentHarness:
             return None
         return self._follow_up_queue.pop()
 
+    def pop_latest_steering(self) -> AgentMessage | None:
+        if not self._steering_queue:
+            return None
+        return self._steering_queue.pop()
+
     def queue_update_event(self) -> QueueUpdateEvent:
         return QueueUpdateEvent(
             steering=tuple(message.content for message in self._steering_queue),

@@ -1,98 +1,19 @@
+from __future__ import annotations
+
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from agent.messages import AgentMessage
 from agent.tools import AgentTool
+from agent.types import JSONValue
 
 CHARS_PER_TOKEN = 4
 MESSAGE_OVERHEAD_TOKENS = 4
 TOOL_OVERHEAD_TOKENS = 16
-SUMMARY_MESSAGE_CHAR_LIMIT = 500
 DEFAULT_CONTEXT_WINDOW_TOKENS = 32_000
 DEFAULT_COMPACTION_RESERVE_TOKENS = 4_096
 DEFAULT_COMPACTION_KEEP_RECENT_TOKENS = 4_096
 COMPACTION_SUMMARY_PREFIX = "Previous conversation summary:\n"
-
-SUMMARIZATION_SYSTEM_PROMPT = (
-    "You are a context summarization assistant. Your task is to read a conversation "
-    "between a user and an AI coding assistant, then produce a structured summary "
-    "following the exact format specified.\n\n"
-    "Do NOT continue the conversation. Do NOT respond to any questions in the "
-    "conversation. ONLY output the structured summary."
-)
-
-SUMMARIZATION_PROMPT = (
-    "The messages above are a conversation to summarize. Create a structured context "
-    "checkpoint summary that another LLM will use to continue the work.\n\n"
-    "Use this EXACT format:\n\n"
-    "## Goal\n"
-    "[What is the user trying to accomplish? Can be multiple items if the session "
-    "covers different tasks.]\n\n"
-    "## Constraints & Preferences\n"
-    "- [Any constraints, preferences, or requirements mentioned by user]\n"
-    '- [Or "(none)" if none were mentioned]\n\n'
-    "## Progress\n"
-    "### Done\n"
-    "- [x] [Completed tasks/changes]\n\n"
-    "### In Progress\n"
-    "- [ ] [Current work]\n\n"
-    "### Blocked\n"
-    "- [Issues preventing progress, if any]\n\n"
-    "## Key Decisions\n"
-    "- **[Decision]**: [Brief rationale]\n\n"
-    "## Next Steps\n"
-    "1. [Ordered list of what should happen next]\n\n"
-    "## Critical Context\n"
-    "- [Any data, examples, or references needed to continue]\n"
-    '- [Or "(none)" if not applicable]\n\n'
-    "Keep each section concise. Preserve exact file paths, function names, and error "
-    "messages."
-)
-
-UPDATE_SUMMARIZATION_PROMPT = (
-    "The messages above are NEW conversation messages to incorporate into the existing "
-    "summary provided in <previous-summary> tags.\n\n"
-    "Update the existing structured summary with new information. RULES:\n"
-    "- PRESERVE all existing information from the previous summary\n"
-    "- ADD new progress, decisions, and context from the new messages\n"
-    '- UPDATE the Progress section: move items from "In Progress" to "Done" when '
-    "completed\n"
-    '- UPDATE "Next Steps" based on what was accomplished\n'
-    "- PRESERVE exact file paths, function names, and error messages\n"
-    "- If something is no longer relevant, you may remove it\n\n"
-    "Use this EXACT format:\n\n"
-    "## Goal\n"
-    "[Preserve existing goals, add new ones if the task expanded]\n\n"
-    "## Constraints & Preferences\n"
-    "- [Preserve existing, add new ones discovered]\n\n"
-    "## Progress\n"
-    "### Done\n"
-    "- [x] [Include previously done items AND newly completed items]\n\n"
-    "### In Progress\n"
-    "- [ ] [Current work - update based on progress]\n\n"
-    "### Blocked\n"
-    "- [Current blockers - remove if resolved]\n\n"
-    "## Key Decisions\n"
-    "- **[Decision]**: [Brief rationale] (preserve all previous, add new)\n\n"
-    "## Next Steps\n"
-    "1. [Update based on current state]\n\n"
-    "## Critical Context\n"
-    "- [Preserve important context, add new if needed]\n\n"
-    "Keep each section concise. Preserve exact file paths, function names, and error "
-    "messages."
-)
-
-TURN_PREFIX_SUMMARIZATION_PROMPT = (
-    "This is the PREFIX of a turn that was too large to keep. The SUFFIX (recent work) "
-    "is retained.\n\n"
-    "Summarize the prefix to provide context for the retained suffix:\n\n"
-    "## Original Request\n"
-    "[What did the user ask for in this turn?]\n\n"
-    "## Early Progress\n"
-    "- [Key decisions and work done in the prefix]\n\n"
-    "## Context for Suffix\n"
-    "- [Information needed to understand the retained recent work]\n\n"
-    "Be concise. Focus on what's needed to understand the kept suffix."
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,15 +61,6 @@ def estimate_tool_tokens(tool: AgentTool) -> int:
     )
 
 
-def estimate_context_tokens(
-    *,
-    system: str,
-    messages: tuple[AgentMessage, ...],
-    tools: tuple[AgentTool, ...],
-) -> int:
-    return estimate_context_usage(system=system, messages=messages, tools=tools).total_tokens
-
-
 def auto_compaction_threshold_for_context_window(context_window_tokens: int) -> int | None:
     if context_window_tokens <= 0:
         return None
@@ -174,97 +86,94 @@ def estimate_context_usage(
     )
 
 
-def summarize_messages_for_compaction(messages: tuple[AgentMessage, ...]) -> str:
+def build_truncation_summary(messages: tuple[AgentMessage, ...]) -> str:
+    """Build a deterministic summary from old messages without an LLM call."""
     if not messages:
         return "No prior messages."
-    lines = [f"Automatically compacted {len(messages)} prior message(s)."]
-    for index, message in enumerate(messages, start=1):
-        lines.append(f"{index}. {message.role}: {_message_text(message)}")
-    return "\n".join(lines)
 
+    files_read: list[str] = []
+    files_written: list[str] = []
+    commands: list[str] = []
+    errors: list[str] = []
+    first_user_content: str | None = None
+    last_assistant_content: str | None = None
 
-def build_compaction_summary_prompt(
-    messages: tuple[AgentMessage, ...],
-    *,
-    custom_instructions: str | None = None,
-) -> str:
-    previous_summary, new_messages = _split_previous_compaction_summary(messages)
-    conversation = serialize_messages_for_compaction(new_messages)
-    prompt = f"<conversation>\n{conversation}\n</conversation>\n\n"
-    base_prompt = (
-        UPDATE_SUMMARIZATION_PROMPT if previous_summary is not None else SUMMARIZATION_PROMPT
-    )
+    for message in messages:
+        if (
+            message.role == "user"
+            and message.content.startswith(COMPACTION_SUMMARY_PREFIX)
+        ):
+            continue
 
-    if previous_summary is not None:
-        prompt += f"<previous-summary>\n{previous_summary}\n</previous-summary>\n\n"
+        if message.role == "user" and first_user_content is None:
+            first_user_content = message.content
 
-    instructions = custom_instructions.strip() if custom_instructions is not None else ""
-    if instructions:
-        base_prompt = f"{base_prompt}\n\nAdditional focus: {instructions}"
-
-    return f"{prompt}{base_prompt}"
-
-
-def serialize_messages_for_compaction(messages: tuple[AgentMessage, ...]) -> str:
-    if not messages:
-        return "(no new messages)"
-
-    lines: list[str] = []
-    for index, message in enumerate(messages, start=1):
-        match message.role:
-            case "user":
-                lines.append(f"<message index={index} role=user>")
-                lines.append(message.content)
-                lines.append("</message>")
-            case "assistant":
-                lines.append(f"<message index={index} role=assistant>")
-                if message.content:
-                    lines.append(message.content)
-                if message.tool_calls:
-                    lines.append("<tool-calls>")
-                    for call in message.tool_calls:
-                        lines.append(f"- {call.name}: {call.arguments}")
-                    lines.append("</tool-calls>")
-                lines.append("</message>")
-            case "tool":
-                lines.append(
-                    f"<message index={index} role=tool name={message.name} ok={message.ok}>"
+        if message.role == "assistant":
+            if message.content:
+                last_assistant_content = message.content
+            for call in message.tool_calls:
+                _extract_tool_signal(
+                    call.name,
+                    call.arguments,
+                    files_read=files_read,
+                    files_written=files_written,
+                    commands=commands,
                 )
-                lines.append(message.content)
-                lines.append("</message>")
-    return "\n".join(lines)
+
+        if message.role == "tool" and not message.ok:
+            error_text = _truncate_text(message.content, limit=150)
+            errors.append(f"{message.name}: {error_text}")
+
+    parts: list[str] = [f"Context compacted ({len(messages)} messages):"]
+
+    if first_user_content:
+        parts.append(f"Goal: {_truncate_text(first_user_content, limit=200)}")
+
+    if files_read:
+        parts.append(f"Files read: {', '.join(files_read)}")
+
+    if files_written:
+        parts.append(f"Files modified: {', '.join(files_written)}")
+
+    if commands:
+        parts.append(f"Commands: {'; '.join(commands)}")
+
+    if errors:
+        parts.append(f"Errors: {'; '.join(errors[:5])}")
+
+    if last_assistant_content:
+        parts.append(f"Last: {_truncate_text(last_assistant_content, limit=200)}")
+
+    return "\n".join(parts)
 
 
-def _message_text(message: AgentMessage) -> str:
-    match message.role:
-        case "user":
-            return _truncate_summary_text(message.content)
-        case "assistant":
-            suffix = ""
-            if message.tool_calls:
-                names = ", ".join(call.name for call in message.tool_calls)
-                suffix = f" [tool calls: {names}]"
-            return _truncate_summary_text(f"{message.content}{suffix}")
-        case "tool":
-            prefix = f"{message.name} {'ok' if message.ok else 'failed'}: "
-            return _truncate_summary_text(f"{prefix}{message.content}")
+def _extract_tool_signal(
+    name: str,
+    arguments: Mapping[str, JSONValue],
+    *,
+    files_read: list[str],
+    files_written: list[str],
+    commands: list[str],
+) -> None:
+    match name:
+        case "read":
+            path = arguments.get("path")
+            if isinstance(path, str) and path not in files_read:
+                files_read.append(path)
+        case "write" | "edit":
+            path = arguments.get("path")
+            if isinstance(path, str) and path not in files_written:
+                files_written.append(path)
+        case "bash":
+            command = arguments.get("command")
+            if isinstance(command, str):
+                truncated = _truncate_text(command, limit=100)
+                if truncated not in commands:
+                    commands.append(truncated)
 
 
-def _truncate_summary_text(text: str) -> str:
+def _truncate_text(text: str, *, limit: int) -> str:
     collapsed = " ".join(text.split())
-    if len(collapsed) <= SUMMARY_MESSAGE_CHAR_LIMIT:
+    if len(collapsed) <= limit:
         return collapsed
-    return collapsed[: SUMMARY_MESSAGE_CHAR_LIMIT - 3].rstrip() + "..."
-
-
-def _split_previous_compaction_summary(
-    messages: tuple[AgentMessage, ...],
-) -> tuple[str | None, tuple[AgentMessage, ...]]:
-    if not messages:
-        return None, messages
-
-    first = messages[0]
-    if first.role != "user" or not first.content.startswith(COMPACTION_SUMMARY_PREFIX):
-        return None, messages
-
-    return first.content.removeprefix(COMPACTION_SUMMARY_PREFIX), messages[1:]
+    return collapsed[: limit - 3].rstrip() + "..."
