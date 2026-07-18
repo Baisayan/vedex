@@ -14,7 +14,6 @@ from coding.paths import VedexPaths
 
 @dataclass(frozen=True, slots=True)
 class AgentCallDiagnosticContext:
-    provider_name: str
     model: str
     cwd: Path
     session_id: str | None
@@ -84,7 +83,6 @@ def _base_entry(
         "phase": phase,
         "run_id": context.run_id,
         "session_id": context.session_id,
-        "provider_name": context.provider_name,
         "model": context.model,
         "cwd": str(context.cwd),
     }

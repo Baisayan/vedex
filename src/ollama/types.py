@@ -53,7 +53,6 @@ class ChatRequest:
     messages: list[OllamaMessage]
     tools: list[OllamaTool] = field(default_factory=list)
     stream: bool = True
-    think: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -63,8 +62,6 @@ class ChatRequest:
         }
         if self.tools:
             d["tools"] = [t.to_dict() for t in self.tools]
-        if self.think is not None:
-            d["think"] = self.think
         return d
 
 

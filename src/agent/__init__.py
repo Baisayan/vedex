@@ -35,7 +35,6 @@ from agent.session import (
     SessionEntry,
     SessionInfoEntry,
     SessionState,
-    ThinkingLevelChangeEntry,
 )
 from agent.tools import AgentTool, AgentToolResult, ToolCall, ToolExecutor
 from agent.types import CancellationToken, JSONObject, JSONPrimitive, JSONValue
@@ -73,7 +72,6 @@ __all__ = [
     "SessionInfoEntry",
     "SessionState",
     "SimpleCancellationToken",
-    "ThinkingLevelChangeEntry",
     "ThinkingDeltaEvent",
     "ToolCall",
     "ToolExecutionEndEvent",

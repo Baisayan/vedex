@@ -11,7 +11,6 @@ class OllamaModelInfo:
     name: str
     context_length: int | None
     supports_tools: bool
-    supports_thinking: bool
 
 
 async def list_model_info(
@@ -19,7 +18,7 @@ async def list_model_info(
     *,
     client: OllamaClient | None = None,
 ) -> list[OllamaModelInfo]:
-    """Return metadata for locally available models from ``GET /api/tags``."""
+    
     owns_client = client is None
     client = client or OllamaClient(host)
     try:
@@ -78,6 +77,5 @@ def _parse_model_info(value: Any) -> OllamaModelInfo | None:
     return OllamaModelInfo(
         name=name,
         context_length=context_length,
-        supports_tools="tools" in capabilities,
-        supports_thinking="thinking" in capabilities,
+        supports_tools="tools" in capabilities
     )

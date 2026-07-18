@@ -33,11 +33,6 @@ class ModelChangeEntry(BaseSessionEntry):
     model: str
 
 
-class ThinkingLevelChangeEntry(BaseSessionEntry):
-    type: Literal["thinking_level_change"] = "thinking_level_change"
-    thinking_level: str | None = None
-
-
 class CompactionEntry(BaseSessionEntry):
     type: Literal["compaction"] = "compaction"
     summary: str
@@ -76,7 +71,6 @@ class CustomEntry(BaseSessionEntry):
 type SessionEntry = Annotated[
     MessageEntry
     | ModelChangeEntry
-    | ThinkingLevelChangeEntry
     | CompactionEntry
     | BranchSummaryEntry
     | LabelEntry

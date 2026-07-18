@@ -49,8 +49,7 @@ class OllamaChat:
                     model=model,
                     system=system,
                     messages=messages,
-                    tools=tools,
-                    think=True if model_info.supports_thinking else None,
+                    tools=tools
                 )
                 yield ProviderResponseStartEvent(model=model)
 
@@ -132,7 +131,6 @@ def _build_request(
     system: str,
     messages: list[AgentMessage],
     tools: list[AgentTool],
-    think: bool | None = None,
 ) -> ChatRequest:
     ollama_messages = [OllamaMessage(role="system", content=system)]
     for msg in messages:
@@ -150,8 +148,7 @@ def _build_request(
     return ChatRequest(
         model=model,
         messages=ollama_messages,
-        tools=ollama_tools,
-        think=think,
+        tools=ollama_tools
     )
 
 

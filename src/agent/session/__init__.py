@@ -8,8 +8,7 @@ from agent.session.entries import (
     MessageEntry,
     ModelChangeEntry,
     SessionEntry,
-    SessionInfoEntry,
-    ThinkingLevelChangeEntry,
+    SessionInfoEntry
 )
 from agent.session.jsonl import (
     SessionJsonlError,
@@ -37,7 +36,6 @@ __all__ = [
     "SessionState",
     "SessionStorage",
     "SessionTreeError",
-    "ThinkingLevelChangeEntry",
     "entries_by_id",
     "entries_from_json_lines",
     "entry_from_json_line",

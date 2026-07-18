@@ -20,7 +20,6 @@ _UNSET_LEAF_ID: Final[object] = object()
 class SessionState:
     messages: tuple[AgentMessage, ...]
     model: str | None
-    thinking_level: str | None
     label: str | None
     active_leaf_id: str | None
     session_info: SessionInfoEntry | None
@@ -48,7 +47,6 @@ class SessionState:
 
         message_rows: list[tuple[str, AgentMessage]] = []
         model: str | None = None
-        thinking_level: str | None = None
         label: str | None = None
         active_leaf_id: str | None = resolved_leaf_id
         session_info: SessionInfoEntry | None = None
@@ -65,8 +63,6 @@ class SessionState:
                     message_rows.append((entry.id, entry.message))
                 case "model_change":
                     model = entry.model
-                case "thinking_level_change":
-                    thinking_level = entry.thinking_level
                 case "label":
                     label = entry.label
                 case "leaf":
@@ -86,7 +82,6 @@ class SessionState:
         return cls(
             messages=tuple(message for _entry_id, message in message_rows),
             model=model,
-            thinking_level=thinking_level,
             label=label,
             active_leaf_id=active_leaf_id,
             session_info=session_info,
