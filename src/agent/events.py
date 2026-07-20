@@ -8,33 +8,28 @@ from agent.types import JSONValue
 
 class AgentStartEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     type: Literal["agent_start"] = "agent_start"
 
 
 class AgentEndEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     type: Literal["agent_end"] = "agent_end"
 
 
 class TurnStartEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     type: Literal["turn_start"] = "turn_start"
     turn: int
 
 
 class TurnEndEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     type: Literal["turn_end"] = "turn_end"
     turn: int
 
 
 class QueueUpdateEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     type: Literal["queue_update"] = "queue_update"
     steering: tuple[str, ...] = ()
     follow_up: tuple[str, ...] = ()
@@ -42,42 +37,36 @@ class QueueUpdateEvent(BaseModel):
 
 class MessageStartEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     type: Literal["message_start"] = "message_start"
     message_role: Literal["user", "assistant", "tool"] = "assistant"
 
 
 class MessageDeltaEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     type: Literal["message_delta"] = "message_delta"
     delta: str
 
 
 class ThinkingDeltaEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     type: Literal["thinking_delta"] = "thinking_delta"
     delta: str
 
 
 class MessageEndEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     type: Literal["message_end"] = "message_end"
     message: AgentMessage
 
 
 class ToolExecutionStartEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     type: Literal["tool_execution_start"] = "tool_execution_start"
     tool_call: ToolCall
 
 
 class ToolExecutionUpdateEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     type: Literal["tool_execution_update"] = "tool_execution_update"
     tool_call_id: str
     message: str
@@ -86,21 +75,16 @@ class ToolExecutionUpdateEvent(BaseModel):
 
 class ToolExecutionEndEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     type: Literal["tool_execution_end"] = "tool_execution_end"
     result: AgentToolResult
 
 
 class ErrorEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     type: Literal["error"] = "error"
     message: str
     recoverable: bool = False
     data: dict[str, JSONValue] | None = None
-
-
-# ── Provider events ───────────────────────────────────────────────────────────
 
 
 class ProviderResponseStartEvent(BaseModel):
