@@ -1,3 +1,5 @@
+from agent.chat import OllamaChat
+from agent.client import OLLAMA_HOST, OllamaClient
 from agent.events import (
     AgentEndEvent,
     AgentEvent,
@@ -23,6 +25,7 @@ from agent.harness import (
 )
 from agent.loop import run_agent_loop
 from agent.messages import AgentMessage, AssistantMessage, ToolResultMessage, UserMessage
+from agent.models import OllamaModelInfo, get_model_info, list_model_info
 from agent.session import (
     CompactionEntry,
     JsonlSessionStorage,
@@ -49,15 +52,21 @@ __all__ = [
     "CompactionEntry",
     "ErrorEvent",
     "EventListener",
+    "get_model_info",
     "JSONObject",
     "JSONPrimitive",
     "JsonlSessionStorage",
     "JSONValue",
+    "list_model_info",
     "MessageDeltaEvent",
     "MessageEndEvent",
     "MessageEntry",
     "MessageStartEvent",
     "ModelChangeEntry",
+    "OLLAMA_HOST",
+    "OllamaChat",
+    "OllamaClient",
+    "OllamaModelInfo",
     "QueuedMessages",
     "QueueUpdateEvent",
     "SessionEntry",

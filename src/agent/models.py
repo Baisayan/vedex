@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from ollama.client import OLLAMA_HOST, OllamaClient
+from agent.client import OLLAMA_HOST, OllamaClient
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,7 +18,7 @@ async def list_model_info(
     *,
     client: OllamaClient | None = None,
 ) -> list[OllamaModelInfo]:
-    
+
     owns_client = client is None
     client = client or OllamaClient(host)
     try:
@@ -45,7 +45,6 @@ async def get_model_info(
     *,
     client: OllamaClient | None = None,
 ) -> OllamaModelInfo:
-    """Return metadata for a locally available model from ``GET /api/tags``."""
     for info in await list_model_info(host, client=client):
         if info.name == model:
             return info

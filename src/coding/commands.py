@@ -10,7 +10,7 @@ from coding.resources import ResourceDiagnostic
 from coding.session_manager import SessionManager
 from coding.skills import Skill
 from coding.system_prompt import ProjectContextFile
-from ollama.models import list_model_info
+from agent.models import list_model_info
 
 
 class CommandSession(Protocol):

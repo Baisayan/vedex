@@ -18,23 +18,19 @@ from agent import (
 )
 from agent.messages import AgentMessage, AssistantMessage, ToolResultMessage, UserMessage
 from agent.session import (
-    BranchSummaryEntry,
     CompactionEntry,
     JsonlSessionStorage,
-    LeafEntry,
     MessageEntry,
     ModelChangeEntry,
     SessionInfoEntry,
     SessionState,
     SessionStorage
 )
-from agent.session.entries import SessionEntry
-from agent.session.jsonl import entry_to_json_line
-from agent.session.tree import SessionTreeError, path_to_entry
+from agent.session import entry_to_json_line, SessionEntry
 from agent.tools import AgentTool
 from agent.events import ProviderErrorEvent, ProviderResponseEndEvent, ProviderTextDeltaEvent
 from agent.loop import Provider
-from ollama.models import get_model_info
+from agent.models import get_model_info
 from coding.commands import CommandRegistry, CommandResult, create_default_command_registry
 from coding.context import discover_project_context_with_diagnostics
 from coding.context_window import (

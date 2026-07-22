@@ -22,7 +22,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ollama", "src/agent", "src/coding"]
+packages = ["src/agent", "src/coding"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
