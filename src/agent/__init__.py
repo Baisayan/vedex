@@ -1,31 +1,36 @@
-from agent.chat import OllamaChat
-from agent.client import OLLAMA_HOST, OllamaClient
-from agent.events import (
+from agent.core import (
+    OLLAMA_HOST,
+    OllamaClient,
+    OllamaModelInfo,
+    get_model_info,
+    list_model_info,
+    run_agent_loop,
+)
+from agent.schema import (
     AgentEndEvent,
     AgentEvent,
+    AgentMessage,
     AgentStartEvent,
+    AgentTool,
+    AgentToolResult,
+    AssistantMessage,
+    CancellationToken,
     ErrorEvent,
+    JSONPrimitive,
+    JSONValue,
     MessageDeltaEvent,
     MessageEndEvent,
     MessageStartEvent,
-    QueueUpdateEvent,
     ThinkingDeltaEvent,
+    ToolCall,
     ToolExecutionEndEvent,
     ToolExecutionStartEvent,
-    ToolExecutionUpdateEvent,
+    ToolExecutor,
+    ToolResultMessage,
     TurnEndEvent,
     TurnStartEvent,
+    UserMessage,
 )
-from agent.harness import (
-    AgentHarness,
-    AgentHarnessConfig,
-    EventListener,
-    QueuedMessages,
-    SimpleCancellationToken,
-)
-from agent.loop import run_agent_loop
-from agent.messages import AgentMessage, AssistantMessage, ToolResultMessage, UserMessage
-from agent.models import OllamaModelInfo, get_model_info, list_model_info
 from agent.session import (
     CompactionEntry,
     JsonlSessionStorage,
@@ -35,25 +40,19 @@ from agent.session import (
     SessionInfoEntry,
     SessionState,
 )
-from agent.tools import AgentTool, AgentToolResult, ToolCall, ToolExecutor
-from agent.types import CancellationToken, JSONObject, JSONPrimitive, JSONValue
 
 __all__ = [
     "AgentEndEvent",
     "AgentEvent",
     "AgentMessage",
     "AgentStartEvent",
-    "AgentHarness",
-    "AgentHarnessConfig",
     "AgentTool",
     "AgentToolResult",
     "AssistantMessage",
     "CancellationToken",
     "CompactionEntry",
     "ErrorEvent",
-    "EventListener",
     "get_model_info",
-    "JSONObject",
     "JSONPrimitive",
     "JsonlSessionStorage",
     "JSONValue",
@@ -64,20 +63,15 @@ __all__ = [
     "MessageStartEvent",
     "ModelChangeEntry",
     "OLLAMA_HOST",
-    "OllamaChat",
     "OllamaClient",
     "OllamaModelInfo",
-    "QueuedMessages",
-    "QueueUpdateEvent",
     "SessionEntry",
     "SessionInfoEntry",
     "SessionState",
-    "SimpleCancellationToken",
     "ThinkingDeltaEvent",
     "ToolCall",
     "ToolExecutionEndEvent",
     "ToolExecutionStartEvent",
-    "ToolExecutionUpdateEvent",
     "ToolExecutor",
     "ToolResultMessage",
     "TurnEndEvent",

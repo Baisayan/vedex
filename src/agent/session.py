@@ -7,7 +7,7 @@ from typing import Annotated, Literal, Protocol
 from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
-from agent.messages import AgentMessage, UserMessage
+from agent.schema import AgentMessage, UserMessage
 
 
 def new_entry_id() -> str:
