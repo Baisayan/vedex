@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from agent.events import ErrorEvent
+from agent import ErrorEvent
 from coding.paths import VedexPaths
 
 

@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from agent.types import JSONValue
 from coding.paths import VedexPaths
 
 
@@ -140,7 +139,3 @@ def derive_description(content: str) -> str | None:
             return stripped.lstrip("#").strip() or None
         return stripped
     return None
-
-
-def metadata_to_json(metadata: dict[str, str]) -> dict[str, JSONValue]:
-    return dict(metadata)

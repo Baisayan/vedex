@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 from xml.sax.saxutils import escape
 
-from agent.tools import AgentTool
+from agent import AgentTool
 from coding.skills import Skill
 
 

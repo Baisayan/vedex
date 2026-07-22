@@ -23,15 +23,6 @@ class PromptTemplate:
     description: str | None = None
 
 
-def load_prompt_templates(paths: ResourcePaths | None = None) -> list[PromptTemplate]:
-    resource_paths = paths or ResourcePaths()
-    templates_by_name: dict[str, PromptTemplate] = {}
-    for prompts_dir in resource_paths.prompts_dirs:
-        for template in _load_prompt_templates_from_dir(prompts_dir):
-            templates_by_name[template.name] = template
-    return sorted(templates_by_name.values(), key=lambda template: template.name)
-
-
 def load_prompt_templates_with_diagnostics(
     paths: ResourcePaths | None = None,
 ) -> tuple[list[PromptTemplate], list[ResourceDiagnostic]]:
@@ -125,14 +116,6 @@ def _find_prompt_template(
 def _parse_prompt_template_command(text: str) -> tuple[str, str]:
     command, separator, args = text[1:].partition(" ")
     return command.strip().lower(), args.strip() if separator else ""
-
-
-def _load_prompt_templates_from_dir(prompts_dir: Path) -> list[PromptTemplate]:
-    templates, diagnostics = _load_prompt_templates_from_dir_with_diagnostics(prompts_dir)
-    if diagnostics:
-        first = diagnostics[0]
-        raise ResourceError(first.message)
-    return templates
 
 
 def _load_prompt_templates_from_dir_with_diagnostics(

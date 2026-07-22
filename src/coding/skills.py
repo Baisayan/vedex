@@ -1,4 +1,3 @@
-import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,25 +17,6 @@ class Skill:
     path: Path
     content: str
     description: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class SkillInvocation:
-    name: str
-    location: str
-    content: str
-    additional_instructions: str | None = None
-
-
-def load_skills(paths: ResourcePaths | None = None) -> list[Skill]:
-    resource_paths = paths or ResourcePaths()
-    skills_by_name: dict[str, Skill] = {}
-
-    for skills_dir in resource_paths.skills_dirs:
-        for skill in _load_skills_from_dir(skills_dir):
-            skills_by_name[skill.name] = skill
-
-    return sorted(skills_by_name.values(), key=lambda skill: skill.name)
 
 
 def load_skills_with_diagnostics(
@@ -97,40 +77,6 @@ def format_skill_invocation(
     if additional_instructions and additional_instructions.strip():
         return f"{skill_block}\n\n{additional_instructions.strip()}"
     return skill_block
-
-
-def parse_skill_invocation(text: str) -> SkillInvocation | None:
-    match = re.match(
-        r'^<skill name="([^"]+)" location="([^"]+)">\n([\s\S]*?)\n</skill>(?:\n\n([\s\S]+))?$',
-        text,
-    )
-    if match is None:
-        return None
-    name, location, content, additional_instructions = match.groups()
-    return SkillInvocation(
-        name=name,
-        location=location,
-        content=content,
-        additional_instructions=additional_instructions,
-    )
-
-
-def build_skill_index(skills: Sequence[Skill]) -> str:
-    if not skills:
-        return "Available skills: none"
-    lines = ["Available skills:"]
-    for skill in sorted(skills, key=lambda item: item.name):
-        description = skill.description or "No description"
-        lines.append(f"- {skill.name}: {description}")
-    return "\n".join(lines)
-
-
-def _load_skills_from_dir(skills_dir: Path) -> list[Skill]:
-    skills, diagnostics = _load_skills_from_dir_with_diagnostics(skills_dir)
-    if diagnostics:
-        first = diagnostics[0]
-        raise ResourceError(first.message)
-    return skills
 
 
 def _load_skills_from_dir_with_diagnostics(

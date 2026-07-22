@@ -3,14 +3,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from agent.tools import AgentTool
+from agent import AgentTool, list_model_info
 from coding.prompt_templates import PromptTemplate
 from coding.reload import CodingReloadSummary, ReloadCategorySummary
 from coding.resources import ResourceDiagnostic
 from coding.session_manager import SessionManager
 from coding.skills import Skill
 from coding.system_prompt import ProjectContextFile
-from agent.models import list_model_info
 
 
 class CommandSession(Protocol):
@@ -73,7 +72,6 @@ class CommandResult:
     new_session_requested: bool = False
     resume_session_id: str | None = None
     resume_picker_requested: bool = False
-    tree_picker_requested: bool = False
     model_picker_requested: bool = False
     message: str | None = None
 
@@ -243,15 +241,6 @@ def create_default_command_registry() -> CommandRegistry:
     )
     registry.register(
         SlashCommand(
-            name="tree",
-            usage="/tree",
-            description="Branch from a previous session entry.",
-            handler=_tree_command,
-            search_terms=("branch", "history", "fork"),
-        )
-    )
-    registry.register(
-        SlashCommand(
             name="name",
             usage="/name <new name>",
             description="Rename the current session.",
@@ -387,12 +376,6 @@ async def _resume_command(context: CommandContext) -> CommandResult:
         handled=True,
         resume_session_id=session_id,
     )
-
-
-async def _tree_command(context: CommandContext) -> CommandResult:
-    if context.args:
-        return CommandResult(handled=True, message="Usage: /tree")
-    return CommandResult(handled=True, tree_picker_requested=True)
 
 
 async def _name_command(context: CommandContext) -> CommandResult:
