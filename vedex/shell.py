@@ -3,7 +3,7 @@ from json import JSONDecodeError, loads
 from pathlib import Path
 from typing import Any
 
-from coding.paths import VedexPaths
+from paths import VedexPaths
 
 
 class ShellConfigError(ValueError):

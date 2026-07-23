@@ -5,19 +5,17 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from agent import (
+from schema import (
     AgentEvent,
     AgentMessage,
     AgentTool,
     ErrorEvent,
     MessageEndEvent,
-    OllamaClient,
     ToolExecutionEndEvent,
     UserMessage,
-    get_model_info,
-    run_agent_loop,
 )
-from agent.session import (
+from core import OllamaClient, get_model_info, run_agent_loop
+from session import (
     CompactionEntry,
     JsonlSessionStorage,
     MessageEntry,
@@ -29,9 +27,9 @@ from agent.session import (
     SessionJsonlError,
     entry_from_json_line,
 )
-from coding.commands import CommandRegistry, CommandResult, create_default_command_registry
-from coding.context import discover_project_context_with_diagnostics
-from coding.context_window import (
+from commands import CommandRegistry, CommandResult, create_default_command_registry
+from context import discover_project_context_with_diagnostics
+from context_window import (
     DEFAULT_COMPACTION_KEEP_RECENT_TOKENS,
     DEFAULT_CONTEXT_WINDOW_TOKENS,
     ContextUsageEstimate,
@@ -40,31 +38,31 @@ from coding.context_window import (
     estimate_context_usage,
     estimate_message_tokens,
 )
-from coding.diagnostics import (
+from diagnostics import (
     AgentCallDiagnosticContext,
     AgentCallDiagnosticLogger,
     new_agent_call_run_id,
 )
-from coding.prompt_templates import (
+from prompt_templates import (
     PromptTemplate,
     expand_prompt_template_command,
     load_prompt_templates_with_diagnostics,
 )
-from coding.reload import CodingReloadSummary, ReloadCategorySummary
-from coding.resources import (
+from reload import CodingReloadSummary, ReloadCategorySummary
+from resources import (
     ResourceDiagnostic,
     ResourceError,
     ResourcePaths,
     resource_paths_with_cwd,
 )
-from coding.session_manager import SessionManager
-from coding.skills import Skill, expand_skill_command, load_skills_with_diagnostics
-from coding.system_prompt import (
+from session_manager import SessionManager
+from skills import Skill, expand_skill_command, load_skills_with_diagnostics
+from system_prompt import (
     BuildSystemPromptOptions,
     ProjectContextFile,
     build_system_prompt,
 )
-from coding.tools import create_bash_tool, create_coding_tools
+from tools import create_bash_tool, create_coding_tools
 
 
 @dataclass(frozen=True, slots=True)

@@ -3,13 +3,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from agent import AgentTool, list_model_info
-from coding.prompt_templates import PromptTemplate
-from coding.reload import CodingReloadSummary, ReloadCategorySummary
-from coding.resources import ResourceDiagnostic
-from coding.session_manager import SessionManager
-from coding.skills import Skill
-from coding.system_prompt import ProjectContextFile
+from schema import AgentTool
+from core import list_model_info
+from prompt_templates import PromptTemplate
+from reload import CodingReloadSummary, ReloadCategorySummary
+from resources import ResourceDiagnostic
+from session_manager import SessionManager
+from skills import Skill
+from system_prompt import ProjectContextFile
 
 
 class CommandSession(Protocol):

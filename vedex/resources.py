@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from coding.paths import VedexPaths
+from paths import VedexPaths
 
 
 class ResourceError(ValueError):

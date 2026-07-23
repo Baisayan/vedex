@@ -4,8 +4,8 @@ from datetime import date
 from pathlib import Path
 from xml.sax.saxutils import escape
 
-from agent import AgentTool
-from coding.skills import Skill
+from schema import AgentTool
+from skills import Skill
 
 
 @dataclass(frozen=True, slots=True)

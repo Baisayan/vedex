@@ -9,16 +9,16 @@ from typing import Annotated
 
 import typer
 
-from agent import OLLAMA_HOST, list_model_info
-from coding.rendering import CommandLineRenderer
-from coding.session import (
+from core import OLLAMA_HOST, list_model_info
+from rendering import CommandLineRenderer
+from coding_session import (
     CodingSession,
     CodingSessionConfig,
     TerminalCommandResult,
     jsonl_session_storage,
     parse_terminal_command,
 )
-from coding.session_manager import SessionManager
+from session_manager import SessionManager
 
 
 def _is_utf8_encoding(encoding: str | None) -> bool:

@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from coding.resources import ResourceDiagnostic, ResourcePaths
-from coding.system_prompt import ProjectContextFile
+from resources import ResourceDiagnostic, ResourcePaths
+from system_prompt import ProjectContextFile
 
 PROJECT_MARKERS = (".git", "pyproject.toml", "uv.lock", "setup.py", "package.json")
 

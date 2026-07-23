@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from agent import AgentMessage, AgentTool, JSONValue
+from schema import AgentMessage, AgentTool, JSONValue
 
 CHARS_PER_TOKEN = 4
 MESSAGE_OVERHEAD_TOKENS = 4

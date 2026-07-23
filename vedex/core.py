@@ -10,7 +10,7 @@ from uuid import uuid4
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from agent.schema import (
+from schema import (
     AgentEndEvent,
     AgentEvent,
     AgentStartEvent,

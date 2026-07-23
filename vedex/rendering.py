@@ -5,7 +5,7 @@ from typing import Any
 from rich.console import Console
 from rich.text import Text
 
-from agent import (
+from schema import (
     AgentEndEvent,
     AgentEvent,
     ErrorEvent,

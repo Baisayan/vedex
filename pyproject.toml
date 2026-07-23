@@ -21,7 +21,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/agent", "src/coding"]
+packages = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

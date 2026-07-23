@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from agent import ErrorEvent
-from coding.paths import VedexPaths
+from schema import ErrorEvent
+from paths import VedexPaths
 
 
 @dataclass(frozen=True, slots=True)
