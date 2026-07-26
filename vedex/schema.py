@@ -6,7 +6,6 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 # ── Primitives ─────────────────────────────────────────────────────────────────
 
 class CancellationToken(Protocol):

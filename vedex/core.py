@@ -9,12 +9,11 @@ from uuid import uuid4
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-
 from schema import (
     AgentEndEvent,
     AgentEvent,
-    AgentStartEvent,
     AgentMessage,
+    AgentStartEvent,
     AgentTool,
     AgentToolResult,
     AssistantMessage,
@@ -33,7 +32,6 @@ from schema import (
     TurnStartEvent,
     UserMessage,
 )
-
 
 # HTTP client
 

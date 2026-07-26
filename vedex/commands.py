@@ -1,16 +1,18 @@
-from collections.abc import Callable, Sequence, Awaitable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from schema import AgentTool
 from core import list_model_info
-from prompt_templates import PromptTemplate
-from reload import CodingReloadSummary, ReloadCategorySummary
-from resources import ResourceDiagnostic
+from resources import (
+    ProjectContextFile,
+    PromptTemplate,
+    ReloadCategorySummary,
+    ReloadSummary,
+    Skill,
+)
+from schema import AgentTool
 from session_manager import SessionManager
-from skills import Skill
-from system_prompt import ProjectContextFile
 
 
 class CommandSession(Protocol):
@@ -43,9 +45,6 @@ class CommandSession(Protocol):
     def context_window_tokens(self) -> int: ...
 
     @property
-    def resource_diagnostics(self) -> Sequence[ResourceDiagnostic]: ...
-
-    @property
     def system_prompt(self) -> str: ...
 
     @property
@@ -61,7 +60,7 @@ class CommandSession(Protocol):
 
     def set_model(self, model: str) -> None: ...
 
-    def reload(self) -> CodingReloadSummary: ...
+    def reload(self) -> ReloadSummary: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -295,7 +294,6 @@ async def _status_command(context: CommandContext) -> CommandResult:
             f"messages={context_usage.message_tokens}, "
             f"tools={context_usage.tool_tokens}",
         )
-    lines.append(f"Resource diagnostics: {len(session.resource_diagnostics)}")
     if session.session_id is not None:
         lines.append(f"Session: {session.session_id}")
     if session.session_title:
@@ -311,20 +309,13 @@ async def _system_command(context: CommandContext) -> CommandResult:
 
 async def _skills_command(context: CommandContext) -> CommandResult:
     if not context.session.skills:
-        lines = ["No skills loaded."]
-        if context.session.resource_diagnostics:
-            lines.append("")
-            lines.extend(_format_diagnostics(context.session.resource_diagnostics, kind="skill"))
-        return CommandResult(handled=True, message="\n".join(lines))
+        return CommandResult(handled=True, message="No skills loaded.")
 
     lines = ["Available skills:"]
     for skill in sorted(context.session.skills, key=lambda item: item.name):
         description = skill.description or "No description"
         lines.append(f"- {skill.name}: {description}")
     lines.append("Use a skill with /skill:<name> [request].")
-    if context.session.resource_diagnostics:
-        lines.append("")
-        lines.extend(_format_diagnostics(context.session.resource_diagnostics, kind="skill"))
     return CommandResult(handled=True, message="\n".join(lines))
 
 
@@ -343,17 +334,10 @@ async def _reload_command(context: CommandContext) -> CommandResult:
 async def _context_command(context: CommandContext) -> CommandResult:
     session = context.session
     if not session.context_files:
-        lines = ["No project context files loaded."]
-        if session.resource_diagnostics:
-            lines.append("")
-            lines.extend(_format_diagnostics(session.resource_diagnostics, kind="context"))
-        return CommandResult(handled=True, message="\n".join(lines))
+        return CommandResult(handled=True, message="No project context files loaded.")
 
     lines = ["Active project context files:"]
     lines.extend(f"- {context_file.path}" for context_file in session.context_files)
-    if session.resource_diagnostics:
-        lines.append("")
-        lines.extend(_format_diagnostics(session.resource_diagnostics, kind="context"))
     return CommandResult(handled=True, message="\n".join(lines))
 
 
@@ -434,18 +418,7 @@ async def _model_command(context: CommandContext) -> CommandResult:
     return CommandResult(handled=True, model_picker_requested=True)
 
 
-def _format_diagnostics(
-    diagnostics: Sequence[ResourceDiagnostic], *, kind: str | None = None
-) -> list[str]:
-    filtered = [diagnostic for diagnostic in diagnostics if kind is None or diagnostic.kind == kind]
-    if not filtered:
-        return ["Resource diagnostics: none"]
-    lines = ["Resource diagnostics:"]
-    lines.extend(f"- {diagnostic.format()}" for diagnostic in filtered)
-    return lines
-
-
-def _format_reload_summary(summary: CodingReloadSummary) -> str:
+def _format_reload_summary(summary: ReloadSummary) -> str:
     lines = [
         "Reloaded local coding resources and project context.",
         "Resources:",
@@ -455,8 +428,6 @@ def _format_reload_summary(summary: CodingReloadSummary) -> str:
         f"- Project context files: {_format_reload_category(summary.context_files)}",
         "- Next-turn system prompt: "
         + ("rebuilt" if summary.system_prompt_rebuilt else "unchanged"),
-        "Diagnostics:",
-        f"- Resource diagnostics: {_format_reload_category(summary.diagnostics)}"
     ]
     return "\n".join(lines)
 

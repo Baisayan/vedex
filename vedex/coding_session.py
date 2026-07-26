@@ -5,30 +5,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from schema import (
-    AgentEvent,
-    AgentMessage,
-    AgentTool,
-    ErrorEvent,
-    MessageEndEvent,
-    ToolExecutionEndEvent,
-    UserMessage,
-)
-from core import OllamaClient, get_model_info, run_agent_loop
-from session import (
-    CompactionEntry,
-    JsonlSessionStorage,
-    MessageEntry,
-    ModelChangeEntry,
-    SessionEntry,
-    SessionInfoEntry,
-    SessionState,
-    SessionStorage,
-    SessionJsonlError,
-    entry_from_json_line,
-)
 from commands import CommandRegistry, CommandResult, create_default_command_registry
-from context import discover_project_context_with_diagnostics
 from context_window import (
     DEFAULT_COMPACTION_KEEP_RECENT_TOKENS,
     DEFAULT_CONTEXT_WINDOW_TOKENS,
@@ -38,30 +15,46 @@ from context_window import (
     estimate_context_usage,
     estimate_message_tokens,
 )
-from diagnostics import (
-    AgentCallDiagnosticContext,
-    AgentCallDiagnosticLogger,
-    new_agent_call_run_id,
-)
-from prompt_templates import (
-    PromptTemplate,
-    expand_prompt_template_command,
-    load_prompt_templates_with_diagnostics,
-)
-from reload import CodingReloadSummary, ReloadCategorySummary
+from core import OllamaClient, get_model_info, run_agent_loop
 from resources import (
-    ResourceDiagnostic,
-    ResourceError,
-    ResourcePaths,
-    resource_paths_with_cwd,
-)
-from session_manager import SessionManager
-from skills import Skill, expand_skill_command, load_skills_with_diagnostics
-from system_prompt import (
     BuildSystemPromptOptions,
     ProjectContextFile,
+    PromptTemplate,
+    ReloadCategorySummary,
+    ReloadSummary,
+    ResourceError,
+    ResourcePaths,
+    Skill,
     build_system_prompt,
+    discover_project_context,
+    expand_prompt_template_command,
+    expand_skill_command,
+    load_prompt_templates,
+    load_skills,
+    resource_paths_with_cwd,
 )
+from schema import (
+    AgentEvent,
+    AgentMessage,
+    AgentTool,
+    ErrorEvent,
+    MessageEndEvent,
+    ToolExecutionEndEvent,
+    UserMessage,
+)
+from session import (
+    CompactionEntry,
+    JsonlSessionStorage,
+    MessageEntry,
+    ModelChangeEntry,
+    SessionEntry,
+    SessionInfoEntry,
+    SessionJsonlError,
+    SessionState,
+    SessionStorage,
+    entry_from_json_line,
+)
+from session_manager import SessionManager
 from tools import create_bash_tool, create_coding_tools
 
 
@@ -85,7 +78,6 @@ class SessionResources:
     skills: tuple[Skill, ...]
     prompt_templates: tuple[PromptTemplate, ...]
     context_files: tuple[ProjectContextFile, ...]
-    diagnostics: tuple[ResourceDiagnostic, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,7 +120,6 @@ class CodingSession:
         skills: tuple[Skill, ...] = (),
         prompt_templates: tuple[PromptTemplate, ...] = (),
         context_files: tuple[ProjectContextFile, ...] = (),
-        resource_diagnostics: tuple[ResourceDiagnostic, ...] = (),
         command_registry: CommandRegistry | None = None,
     ) -> None:
         self._config = config
@@ -142,14 +133,11 @@ class CodingSession:
         self._skills = skills
         self._prompt_templates = prompt_templates
         self._context_files = context_files
-        self._resource_diagnostics = resource_diagnostics
         self._command_registry = command_registry or create_default_command_registry()
         self._resource_paths = resource_paths_with_cwd(config.resource_paths, config.cwd)
         self._auto_compact_token_threshold = config.auto_compact_token_threshold
         self._auto_compact_enabled = config.auto_compact_enabled
         self._context_usage_cache: ContextUsageEstimate | None = None
-        self._diagnostic_logger = AgentCallDiagnosticLogger.from_paths(self._resource_paths.paths)
-        self._last_diagnostic_log_path: Path | None = None
 
     @classmethod
     async def load(cls, config: CodingSessionConfig) -> CodingSession:
@@ -203,7 +191,6 @@ class CodingSession:
             skills=resources.skills,
             prompt_templates=resources.prompt_templates,
             context_files=resources.context_files,
-            resource_diagnostics=resources.diagnostics,
             command_registry=config.command_registry,
         )
 
@@ -278,10 +265,6 @@ class CodingSession:
         return self._command_registry
 
     @property
-    def resource_diagnostics(self) -> tuple[ResourceDiagnostic, ...]:
-        return self._resource_diagnostics
-
-    @property
     def session_id(self) -> str | None:
         return self._config.session_id
 
@@ -298,10 +281,6 @@ class CodingSession:
     def session_manager(self) -> SessionManager | None:
         return self._config.session_manager
 
-    @property
-    def last_diagnostic_log_path(self) -> Path | None:
-        return self._last_diagnostic_log_path
-
     def set_model(self, model: str) -> None:
         self._model = model
         if self._config.session_id is not None and self._config.session_manager is not None:
@@ -310,11 +289,10 @@ class CodingSession:
                 model=model,
             )
 
-    def reload(self) -> CodingReloadSummary:
+    def reload(self) -> ReloadSummary:
         before_skills = _skill_signatures(self._skills)
         before_prompt_templates = _prompt_template_signatures(self._prompt_templates)
         before_context_files = _context_file_signatures(self._context_files)
-        before_diagnostics = _diagnostic_signatures(self._resource_diagnostics)
         before_system_prompt_inputs = _system_prompt_resource_signatures(
             skills=self._skills,
             context_files=self._context_files,
@@ -325,7 +303,6 @@ class CodingSession:
         after_skills = _skill_signatures(resources.skills)
         after_prompt_templates = _prompt_template_signatures(resources.prompt_templates)
         after_context_files = _context_file_signatures(resources.context_files)
-        after_diagnostics = _diagnostic_signatures(resources.diagnostics)
         after_system_prompt_inputs = _system_prompt_resource_signatures(
             skills=resources.skills,
             context_files=resources.context_files,
@@ -352,19 +329,17 @@ class CodingSession:
         self._skills = resources.skills
         self._prompt_templates = resources.prompt_templates
         self._context_files = resources.context_files
-        self._resource_diagnostics = resources.diagnostics
         if rebuilt_system_prompt is not None:
             self._system_prompt = rebuilt_system_prompt
             self._invalidate_context_usage_cache()
 
-        return CodingReloadSummary(
+        return ReloadSummary(
             skills=_category_summary(before_skills, after_skills),
             prompt_templates=_category_summary(
                 before_prompt_templates,
                 after_prompt_templates,
             ),
             context_files=_category_summary(before_context_files, after_context_files),
-            diagnostics=_category_summary(before_diagnostics, after_diagnostics),
             system_prompt_rebuilt=system_prompt_rebuilt,
         )
 
@@ -433,7 +408,6 @@ class CodingSession:
         self._skills = replacement._skills
         self._prompt_templates = replacement._prompt_templates
         self._context_files = replacement._context_files
-        self._resource_diagnostics = replacement._resource_diagnostics
         self._command_registry = replacement._command_registry
         self._resource_paths = replacement._resource_paths
         self._auto_compact_token_threshold = replacement._auto_compact_token_threshold
@@ -515,22 +489,15 @@ class CodingSession:
         self,
         content: str,
     ) -> AsyncIterator[AgentEvent]:
-        context = self._diagnostic_context()
         try:
             expanded_content = self.expand_prompt_text(content)
-        except ResourceError:
-            raise
-        except Exception as exc:
-            self._last_diagnostic_log_path = self._diagnostic_logger.log_exception(
-                context=context,
-                phase="expand_prompt",
-                exc=exc,
-            )
-            raise
+        except ResourceError as exc:
+            yield ErrorEvent(message=str(exc), recoverable=True)
+            return
 
         self._messages.append(UserMessage(content=expanded_content))
 
-        await self._try_auto_compact(context=context, phase="auto_compact_before_prompt")
+        await self._try_auto_compact()
         persisted_count = len(self._messages) - 1
         overflow_event: ErrorEvent | None = None
         try:
@@ -547,18 +514,16 @@ class CodingSession:
                     persisted_count = await self._persist_messages_since(persisted_count)
                 if isinstance(event, ToolExecutionEndEvent):
                     self._invalidate_context_usage_cache()
-                if isinstance(event, ErrorEvent) and not event.recoverable:
-                    self._last_diagnostic_log_path = self._diagnostic_logger.log_error_event(
-                        context=context,
-                        phase="agent_loop",
-                        event=event,
-                    )
-                    if _is_context_overflow_error(event):
-                        overflow_event = event
+                if (
+                    isinstance(event, ErrorEvent)
+                    and not event.recoverable
+                    and _is_context_overflow_error(event)
+                ):
+                    overflow_event = event
                 yield event
             persisted_count = await self._persist_messages_since(persisted_count)
             if overflow_event is not None:
-                compacted = await self._try_overflow_compact(context=context)
+                compacted = await self._try_overflow_compact()
                 if compacted:
                     retry_persisted_count = len(self._messages)
                     retry_events = run_agent_loop(
@@ -576,28 +541,14 @@ class CodingSession:
                             )
                         if isinstance(retry_event, ToolExecutionEndEvent):
                             self._invalidate_context_usage_cache()
-                        if isinstance(retry_event, ErrorEvent) and not retry_event.recoverable:
-                            self._last_diagnostic_log_path = (
-                                self._diagnostic_logger.log_error_event(
-                                    context=context,
-                                    phase="agent_loop_retry",
-                                    event=retry_event,
-                                )
-                            )
                         yield retry_event
                     await self._persist_messages_since(retry_persisted_count)
                 return
-            await self._try_auto_compact(context=context, phase="auto_compact_after_prompt")
-        except Exception as exc:
-            self._last_diagnostic_log_path = self._diagnostic_logger.log_exception(
-                context=context,
-                phase="agent_loop",
-                exc=exc,
-            )
-            raise
+            await self._try_auto_compact()
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            yield ErrorEvent(message=f"Agent run failed: {exc}")
 
     async def continue_(self) -> AsyncIterator[AgentEvent]:
-        context = self._diagnostic_context()
         persisted_count = len(self._messages)
         try:
             events = run_agent_loop(
@@ -613,30 +564,11 @@ class CodingSession:
                     persisted_count = await self._persist_messages_since(persisted_count)
                 if isinstance(event, ToolExecutionEndEvent):
                     self._invalidate_context_usage_cache()
-                if isinstance(event, ErrorEvent) and not event.recoverable:
-                    self._last_diagnostic_log_path = self._diagnostic_logger.log_error_event(
-                        context=context,
-                        phase="agent_loop",
-                        event=event,
-                    )
                 yield event
             await self._persist_messages_since(persisted_count)
-            await self._try_auto_compact(context=context, phase="auto_compact_after_continue")
-        except Exception as exc:
-            self._last_diagnostic_log_path = self._diagnostic_logger.log_exception(
-                context=context,
-                phase="agent_loop",
-                exc=exc,
-            )
-            raise
-
-    def _diagnostic_context(self) -> AgentCallDiagnosticContext:
-        return AgentCallDiagnosticContext(
-            model=self._model,
-            cwd=self.cwd,
-            session_id=self.session_id,
-            run_id=new_agent_call_run_id(),
-        )
+            await self._try_auto_compact()
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            yield ErrorEvent(message=f"Agent run failed: {exc}")
 
     async def _persist_messages_since(self, persisted_count: int) -> int:
         new_messages = self._messages[persisted_count:]
@@ -669,41 +601,16 @@ class CodingSession:
     async def _append_session_entry(self, entry: SessionEntry) -> None:
         await self._config.storage.append(entry)
 
-    async def _try_auto_compact(
-        self,
-        *,
-        context: AgentCallDiagnosticContext,
-        phase: str,
-    ) -> bool:
-        try:
-            return await self._maybe_auto_compact()
-        except Exception as exc:
-            self._last_diagnostic_log_path = self._diagnostic_logger.log_exception(
-                context=context,
-                phase=phase,
-                exc=exc,
-            )
-            return False
+    async def _try_auto_compact(self) -> bool:
+        return await self._maybe_auto_compact()
 
-    async def _try_overflow_compact(
-        self,
-        *,
-        context: AgentCallDiagnosticContext,
-    ) -> bool:
-        try:
-            plan = self._recent_preserving_compaction_plan()
-            if plan is None:
-                return False
-            summary = build_truncation_summary(plan.messages_to_summarize)
-            await self._append_compaction(summary, replace_entry_ids=plan.replace_entry_ids)
-            return True
-        except Exception as exc:
-            self._last_diagnostic_log_path = self._diagnostic_logger.log_exception(
-                context=context,
-                phase="overflow_compact",
-                exc=exc,
-            )
+    async def _try_overflow_compact(self) -> bool:
+        plan = self._recent_preserving_compaction_plan()
+        if plan is None:
             return False
+        summary = build_truncation_summary(plan.messages_to_summarize)
+        await self._append_compaction(summary, replace_entry_ids=plan.replace_entry_ids)
+        return True
 
     async def _maybe_auto_compact(self) -> bool:
         threshold = self.auto_compact_token_threshold
@@ -929,21 +836,6 @@ def _context_file_signatures(
     return tuple((context_file.path, context_file.content) for context_file in context_files)
 
 
-def _diagnostic_signatures(
-    diagnostics: tuple[ResourceDiagnostic, ...],
-) -> tuple[tuple[object, ...], ...]:
-    return tuple(
-        (
-            diagnostic.kind,
-            diagnostic.message,
-            str(diagnostic.path) if diagnostic.path is not None else None,
-            diagnostic.name,
-            diagnostic.severity,
-        )
-        for diagnostic in diagnostics
-    )
-
-
 def _system_prompt_resource_signatures(
     *,
     skills: tuple[Skill, ...],
@@ -960,18 +852,13 @@ def _load_session_resources(
     resource_paths: ResourcePaths,
     explicit_context_files: tuple[ProjectContextFile, ...],
 ) -> SessionResources:
-    loaded_skills, skill_diagnostics = load_skills_with_diagnostics(resource_paths)
-    loaded_prompt_templates, prompt_diagnostics = load_prompt_templates_with_diagnostics(
-        resource_paths
-    )
-    discovered_context, context_diagnostics = discover_project_context_with_diagnostics(
-        resource_paths
-    )
+    loaded_skills = load_skills(resource_paths)
+    loaded_prompt_templates = load_prompt_templates(resource_paths)
+    discovered_context = discover_project_context(resource_paths)
     return SessionResources(
         skills=tuple(loaded_skills),
         prompt_templates=tuple(loaded_prompt_templates),
         context_files=_merge_context_files(explicit_context_files, discovered_context),
-        diagnostics=tuple([*skill_diagnostics, *prompt_diagnostics, *context_diagnostics]),
     )
 
 

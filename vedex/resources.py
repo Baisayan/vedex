@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
@@ -9,7 +10,6 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 from schema import AgentTool
-
 
 # Paths
 
@@ -21,14 +21,6 @@ class VedexPaths:
     @property
     def sessions_dir(self) -> Path:
         return self.home / "sessions"
-
-    @property
-    def logs_dir(self) -> Path:
-        return self.home / "logs"
-
-    @property
-    def agent_calls_log_path(self) -> Path:
-        return self.logs_dir / "agent-calls.jsonl"
 
     @property
     def user_skills_dir(self) -> Path:
@@ -112,21 +104,22 @@ class ResourceError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
-class ResourceDiagnostic:
-    kind: str
-    message: str
-    path: Path | None = None
-    name: str | None = None
-    severity: str = "warning"
+class ReloadCategorySummary:
+    before: int
+    after: int
+    changed: bool
 
-    def format(self) -> str:
-        parts = [self.severity, self.kind]
-        if self.name is not None:
-            parts.append(self.name)
-        label = " ".join(parts)
-        if self.path is None:
-            return f"{label}: {self.message}"
-        return f"{label}: {self.message} ({self.path})"
+    @property
+    def delta(self) -> int:
+        return self.after - self.before
+
+
+@dataclass(frozen=True, slots=True)
+class ReloadSummary:
+    skills: ReloadCategorySummary
+    prompt_templates: ReloadCategorySummary
+    context_files: ReloadCategorySummary
+    system_prompt_rebuilt: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -258,9 +251,8 @@ def _load_markdown_resources(
     *,
     skip_filename: str | None = None,
     include_subdirs: bool = False,
-) -> tuple[list[_MarkdownResource], list[ResourceDiagnostic]]:
+) -> list[_MarkdownResource]:
     all_resources: list[_MarkdownResource] = []
-    diagnostics: list[ResourceDiagnostic] = []
     seen_names: set[str] = set()
 
     for dir_path in dir_paths:
@@ -286,13 +278,8 @@ def _load_markdown_resources(
         for path in files:
             name = path.stem
             if name in seen_names:
-                diagnostics.append(
-                    ResourceDiagnostic(
-                        kind=resource_kind,
-                        name=name,
-                        path=path,
-                        message=f"Duplicate {resource_kind} name ignored in {dir_path}",
-                    )
+                _warn_optional_resource(
+                    f"duplicate {resource_kind} '{name}' ignored: {path}"
                 )
                 continue
             seen_names.add(name)
@@ -304,17 +291,13 @@ def _load_markdown_resources(
                     _MarkdownResource(name=name, path=path, content=content, description=description)
                 )
             except (OSError, UnicodeDecodeError) as exc:
-                diagnostics.append(
-                    ResourceDiagnostic(
-                        kind=resource_kind,
-                        name=name,
-                        path=path,
-                        message=f"could not read {resource_kind}: {exc}",
-                        severity="error",
-                    )
-                )
+                _warn_optional_resource(f"could not read {resource_kind} {path}: {exc}")
 
-    return all_resources, diagnostics
+    return all_resources
+
+
+def _warn_optional_resource(message: str) -> None:
+    print(f"Warning: {message}", file=sys.stderr)
 
 
 # Skills
@@ -327,11 +310,9 @@ class Skill:
     description: str | None = None
 
 
-def load_skills_with_diagnostics(
-    paths: ResourcePaths | None = None,
-) -> tuple[list[Skill], list[ResourceDiagnostic]]:
+def load_skills(paths: ResourcePaths | None = None) -> list[Skill]:
     resource_paths = paths or ResourcePaths()
-    raw_resources, diagnostics = _load_markdown_resources(
+    raw_resources = _load_markdown_resources(
         resource_paths.skills_dirs,
         "skill",
         skip_filename="AGENTS.md",
@@ -341,7 +322,7 @@ def load_skills_with_diagnostics(
         Skill(name=r.name, path=r.path, content=r.content, description=r.description)
         for r in raw_resources
     ]
-    return skills, diagnostics
+    return skills
 
 
 def expand_skill_command(text: str, skills: Sequence[Skill]) -> str | None:
@@ -392,11 +373,9 @@ class PromptTemplate:
     description: str | None = None
 
 
-def load_prompt_templates_with_diagnostics(
-    paths: ResourcePaths | None = None,
-) -> tuple[list[PromptTemplate], list[ResourceDiagnostic]]:
+def load_prompt_templates(paths: ResourcePaths | None = None) -> list[PromptTemplate]:
     resource_paths = paths or ResourcePaths()
-    raw_resources, diagnostics = _load_markdown_resources(
+    raw_resources = _load_markdown_resources(
         resource_paths.prompts_dirs,
         "prompt",
     )
@@ -404,7 +383,7 @@ def load_prompt_templates_with_diagnostics(
         PromptTemplate(name=r.name, path=r.path, content=r.content, description=r.description)
         for r in raw_resources
     ]
-    return templates, diagnostics
+    return templates
 
 
 def render_prompt_template(
@@ -484,30 +463,16 @@ class ProjectContextFile:
 def discover_project_context(
     paths: ResourcePaths | None = None,
 ) -> tuple[ProjectContextFile, ...]:
-    context_files, _diagnostics = discover_project_context_with_diagnostics(paths)
-    return context_files
-
-
-def discover_project_context_with_diagnostics(
-    paths: ResourcePaths | None = None,
-) -> tuple[tuple[ProjectContextFile, ...], tuple[ResourceDiagnostic, ...]]:
     resource_paths = paths or ResourcePaths()
     context_files: list[ProjectContextFile] = []
-    diagnostics: list[ResourceDiagnostic] = []
     for path in _context_file_candidates(resource_paths):
         try:
             content = path.read_text(encoding="utf-8")
         except OSError as exc:
-            diagnostics.append(
-                ResourceDiagnostic(
-                    kind="context",
-                    path=path,
-                    message=f"could not read context file: {exc}",
-                )
-            )
+            _warn_optional_resource(f"could not read project context {path}: {exc}")
             continue
         context_files.append(ProjectContextFile(path=str(path), content=content))
-    return tuple(context_files), tuple(diagnostics)
+    return tuple(context_files)
 
 
 def _context_file_candidates(paths: ResourcePaths) -> tuple[Path, ...]:

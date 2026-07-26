@@ -8,9 +8,6 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-
-from core import OLLAMA_HOST, list_model_info
-from rendering import CommandLineRenderer
 from coding_session import (
     CodingSession,
     CodingSessionConfig,
@@ -18,6 +15,8 @@ from coding_session import (
     jsonl_session_storage,
     parse_terminal_command,
 )
+from core import OLLAMA_HOST, list_model_info
+from rendering import CommandLineRenderer
 from session_manager import SessionManager
 
 

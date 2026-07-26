@@ -14,9 +14,14 @@ from pathlib import Path
 from time import monotonic
 from typing import Any
 
-from schema import AgentTool, AgentToolResult, CancellationToken, JSONValue, ToolExecutor
 from resources import VedexPaths
-
+from schema import (
+    AgentTool,
+    AgentToolResult,
+    CancellationToken,
+    JSONValue,
+    ToolExecutor,
+)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Shell settings (from shell.py)

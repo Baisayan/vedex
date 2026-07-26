@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from time import time
-from pathlib import Path
 from dataclasses import dataclass
+from pathlib import Path
+from time import time
 from typing import Annotated, Literal, Protocol
 from uuid import uuid4
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 from schema import AgentMessage, UserMessage
 
 
