@@ -7,6 +7,8 @@ name = "vedex"
 version = "0.1.0"
 description = "An AI coding agent"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28.1",
@@ -15,13 +17,35 @@ dependencies = [
     "typer>=0.27.0",
 ]
 
+[project.scripts]
+vedex = "vedex.cli:app"
+
 [dependency-groups]
 dev = [
-    "pytest>=9.1.1",
+    "mypy>=1.10",
+    "pytest>=8.0",
+    "ruff>=0.5",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+packages = ["vedex"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["vedex"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["vedex"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
