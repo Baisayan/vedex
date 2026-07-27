@@ -7,11 +7,10 @@ from .core import list_model_info
 from .resources import (
     ProjectContextFile,
     PromptTemplate,
-    ReloadCategorySummary,
-    ReloadSummary,
     Skill,
 )
 from .schema import AgentTool
+from .workspace import ReloadCategorySummary, ReloadSummary
 
 
 class CommandSession(Protocol):

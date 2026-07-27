@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import secrets
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -13,12 +14,14 @@ from .coding_session import (
     CodingSession,
     CodingSessionConfig,
     TerminalCommandResult,
-    jsonl_session_storage,
     parse_terminal_command,
 )
 from .core import OLLAMA_HOST, list_model_info
 from .rendering import CommandLineRenderer
 from .resources import VedexPaths
+from .session import SessionStore
+from .tools import create_coding_tools
+from .workspace import Workspace
 
 
 def _is_utf8_encoding(encoding: str | None) -> bool:
@@ -164,14 +167,20 @@ def _build_session_config(
     cwd: Path,
     session_ref: str | None,
 ) -> CodingSessionConfig:
+    tools = create_coding_tools(cwd=cwd)
+    workspace = Workspace(cwd=cwd, tools=tools)
     if session_ref:
         candidate_path = Path(session_ref).expanduser()
+        if len(session_ref) == 6 and all(char in "0123456789abcdef" for char in session_ref):
+            candidate_path = VedexPaths().sessions_dir / f"{session_ref}.jsonl"
         if candidate_path.exists():
             return CodingSessionConfig(
                 ollama_host=OLLAMA_HOST,
                 model=initial_model,
                 cwd=cwd,
-                storage=jsonl_session_storage(candidate_path),
+                storage=SessionStore(candidate_path),
+                tools=tools,
+                workspace=workspace,
             )
 
         raise RuntimeError(f"Unknown session file: {session_ref}")
@@ -180,8 +189,19 @@ def _build_session_config(
         ollama_host=OLLAMA_HOST,
         model=initial_model,
         cwd=cwd,
-        storage=jsonl_session_storage(VedexPaths().default_session_path(cwd)),
+        storage=_new_session_store(),
+        tools=tools,
+        workspace=workspace,
     )
+
+
+def _new_session_store() -> SessionStore:
+    sessions_dir = VedexPaths().sessions_dir
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    while True:
+        path = sessions_dir / f"{secrets.token_hex(3)}.jsonl"
+        if not path.exists():
+            return SessionStore(path)
 
 
 async def _pick_model() -> str | None:
