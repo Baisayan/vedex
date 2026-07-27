@@ -6,8 +6,6 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# ── Primitives ─────────────────────────────────────────────────────────────────
-
 
 class CancellationToken(Protocol):
     def is_cancelled(self) -> bool: ...
@@ -17,7 +15,7 @@ type JSONPrimitive = str | int | float | bool | None
 type JSONValue = JSONPrimitive | list[JSONValue] | dict[str, JSONValue]
 
 
-# ── Tools ──────────────────────────────────────────────────────────────────────
+# Tools
 
 
 class ToolExecutor(Protocol):
@@ -63,7 +61,7 @@ class AgentTool:
         return await self.executor(arguments, signal=signal)
 
 
-# ── Messages ───────────────────────────────────────────────────────────────────
+# Messages
 
 
 class UserMessage(BaseModel):
@@ -94,7 +92,7 @@ class ToolResultMessage(BaseModel):
 type AgentMessage = UserMessage | AssistantMessage | ToolResultMessage
 
 
-# ── Public events (AgentEvent = what the loop yields to the CLI) ───────────────
+# Public events (AgentEvent = what the loop yields to the CLI)
 
 
 class AgentStartEvent(BaseModel):
