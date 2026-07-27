@@ -59,7 +59,7 @@ frameworks, plugin registries, TUI frameworks, or GUI frameworks.
   directory.
 - `/resume` without an argument lists available session files in a numbered
   terminal picker. `/resume <6-char-id>` resolves that identifier directly.
-- `/new` creates and switches to a new UUID JSONL file.
+- `/new` creates and switches to a new JSONL file.
 - `--session <6-char-id>` resolves the same global file. Supporting a direct JSONL
   path is acceptable when useful for local development.
 - Because session files contain only messages, resuming uses the current CLI
