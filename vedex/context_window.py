@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 
-from schema import AgentMessage, AgentTool, JSONValue
+from .schema import AgentMessage, AgentTool
 
 CHARS_PER_TOKEN = 4
 MESSAGE_OVERHEAD_TOKENS = 4
@@ -11,7 +10,6 @@ TOOL_OVERHEAD_TOKENS = 16
 DEFAULT_CONTEXT_WINDOW_TOKENS = 32_000
 DEFAULT_COMPACTION_RESERVE_TOKENS = 4_096
 DEFAULT_COMPACTION_KEEP_RECENT_TOKENS = 4_096
-COMPACTION_SUMMARY_PREFIX = "Previous conversation summary:\n"
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,96 +80,3 @@ def estimate_context_usage(
         message_count=len(messages),
         tool_count=len(tools),
     )
-
-
-def build_truncation_summary(messages: tuple[AgentMessage, ...]) -> str:
-    """Build a deterministic summary from old messages without an LLM call."""
-    if not messages:
-        return "No prior messages."
-
-    files_read: list[str] = []
-    files_written: list[str] = []
-    commands: list[str] = []
-    errors: list[str] = []
-    first_user_content: str | None = None
-    last_assistant_content: str | None = None
-
-    for message in messages:
-        if (
-            message.role == "user"
-            and message.content.startswith(COMPACTION_SUMMARY_PREFIX)
-        ):
-            continue
-
-        if message.role == "user" and first_user_content is None:
-            first_user_content = message.content
-
-        if message.role == "assistant":
-            if message.content:
-                last_assistant_content = message.content
-            for call in message.tool_calls:
-                _extract_tool_signal(
-                    call.name,
-                    call.arguments,
-                    files_read=files_read,
-                    files_written=files_written,
-                    commands=commands,
-                )
-
-        if message.role == "tool" and not message.ok:
-            error_text = _truncate_text(message.content, limit=150)
-            errors.append(f"{message.name}: {error_text}")
-
-    parts: list[str] = [f"Context compacted ({len(messages)} messages):"]
-
-    if first_user_content:
-        parts.append(f"Goal: {_truncate_text(first_user_content, limit=200)}")
-
-    if files_read:
-        parts.append(f"Files read: {', '.join(files_read)}")
-
-    if files_written:
-        parts.append(f"Files modified: {', '.join(files_written)}")
-
-    if commands:
-        parts.append(f"Commands: {'; '.join(commands)}")
-
-    if errors:
-        parts.append(f"Errors: {'; '.join(errors[:5])}")
-
-    if last_assistant_content:
-        parts.append(f"Last: {_truncate_text(last_assistant_content, limit=200)}")
-
-    return "\n".join(parts)
-
-
-def _extract_tool_signal(
-    name: str,
-    arguments: Mapping[str, JSONValue],
-    *,
-    files_read: list[str],
-    files_written: list[str],
-    commands: list[str],
-) -> None:
-    match name:
-        case "read":
-            path = arguments.get("path")
-            if isinstance(path, str) and path not in files_read:
-                files_read.append(path)
-        case "write" | "edit":
-            path = arguments.get("path")
-            if isinstance(path, str) and path not in files_written:
-                files_written.append(path)
-        case "bash":
-            command = arguments.get("command")
-            if isinstance(command, str):
-                truncated = _truncate_text(command, limit=100)
-                if truncated not in commands:
-                    commands.append(truncated)
-
-
-def _truncate_text(text: str, *, limit: int) -> str:
-    collapsed = " ".join(text.split())
-    if len(collapsed) <= limit:
-        return collapsed
-    return collapsed[: limit - 3].rstrip() + "..."

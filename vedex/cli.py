@@ -3,22 +3,25 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import secrets
 import sys
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
-from core import OLLAMA_HOST, list_model_info
-from rendering import CommandLineRenderer
-from coding_session import (
+from .coding_session import (
     CodingSession,
     CodingSessionConfig,
     TerminalCommandResult,
-    jsonl_session_storage,
     parse_terminal_command,
 )
-from session_manager import SessionManager
+from .core import OLLAMA_HOST, list_model_info
+from .rendering import CommandLineRenderer
+from .resources import VedexPaths
+from .session import SessionStore
+from .tools import create_coding_tools
+from .workspace import Workspace
 
 
 def _is_utf8_encoding(encoding: str | None) -> bool:
@@ -83,7 +86,7 @@ def main(
         )
     except (RuntimeError, ValueError) as exc:
         typer.echo(f"Error: {exc}", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from exc
 
 
 async def _run_repl(
@@ -92,7 +95,7 @@ async def _run_repl(
     session_ref: str | None,
     initial_prompt: str | None,
 ) -> None:
-    config, manager = _build_session_config(
+    config = _build_session_config(
         initial_model=initial_model,
         cwd=cwd,
         session_ref=session_ref,
@@ -131,47 +134,21 @@ async def _run_repl(
                 typer.echo(_format_terminal_command_result(result))
                 continue
 
-            result = await session.handle_command(text)
-            if result.handled:
-                if result.exit_requested:
+            command_result = await session.handle_command(text)
+            if command_result.handled:
+                if command_result.exit_requested:
                     break
-                if result.clear_requested:
+                if command_result.clear_requested:
                     _clear_screen()
                     continue
-                if result.new_session_requested:
-                    try:
-                        msg = await session.new_session()
-                    except ValueError as exc:
-                        typer.echo(str(exc), err=True)
-                        continue
-                    typer.echo(msg)
-                    continue
-                if result.resume_session_id is not None:
-                    try:
-                        msg = await session.resume(result.resume_session_id)
-                    except ValueError as exc:
-                        typer.echo(str(exc), err=True)
-                        continue
-                    typer.echo(msg)
-                    continue
-                if result.resume_picker_requested and manager is not None:
-                    sid = _pick_session(manager, cwd)
-                    if sid is not None:
-                        try:
-                            msg = await session.resume(sid)
-                        except ValueError as exc:
-                            typer.echo(str(exc), err=True)
-                            continue
-                        typer.echo(msg)
-                    continue
-                if result.model_picker_requested:
+                if command_result.model_picker_requested:
                     model_name = await _pick_model()
                     if model_name is not None:
                         session.set_model(model_name)
                         typer.echo(f"Current model set to: {model_name}")
                     continue
-                if result.message:
-                    typer.echo(result.message)
+                if command_result.message:
+                    typer.echo(command_result.message)
                 continue
 
             renderer = CommandLineRenderer()
@@ -189,41 +166,42 @@ def _build_session_config(
     initial_model: str,
     cwd: Path,
     session_ref: str | None,
-) -> tuple[CodingSessionConfig, SessionManager | None]:
-    manager = SessionManager()
-
+) -> CodingSessionConfig:
+    tools = create_coding_tools(cwd=cwd)
+    workspace = Workspace(cwd=cwd, tools=tools)
     if session_ref:
-        existing = manager.get_session(session_ref)
-        if existing is not None:
-            return CodingSessionConfig(
-                ollama_host=OLLAMA_HOST,
-                model=existing.model,
-                cwd=existing.cwd,
-                storage=jsonl_session_storage(existing.path),
-                session_id=existing.id,
-                session_manager=manager,
-            ), manager
-
         candidate_path = Path(session_ref).expanduser()
+        if len(session_ref) == 6 and all(char in "0123456789abcdef" for char in session_ref):
+            candidate_path = VedexPaths().sessions_dir / f"{session_ref}.jsonl"
         if candidate_path.exists():
             return CodingSessionConfig(
                 ollama_host=OLLAMA_HOST,
                 model=initial_model,
                 cwd=cwd,
-                storage=jsonl_session_storage(candidate_path),
-            ), None
+                storage=SessionStore(candidate_path),
+                tools=tools,
+                workspace=workspace,
+            )
 
-        raise RuntimeError(f"Unknown session or file: {session_ref}")
+        raise RuntimeError(f"Unknown session file: {session_ref}")
 
-    record = manager.get_or_create_default_session(cwd=cwd, model=initial_model)
     return CodingSessionConfig(
         ollama_host=OLLAMA_HOST,
-        model=record.model,
-        cwd=record.cwd,
-        storage=jsonl_session_storage(record.path),
-        session_id=record.id,
-        session_manager=manager,
-    ), manager
+        model=initial_model,
+        cwd=cwd,
+        storage=_new_session_store(),
+        tools=tools,
+        workspace=workspace,
+    )
+
+
+def _new_session_store() -> SessionStore:
+    sessions_dir = VedexPaths().sessions_dir
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    while True:
+        path = sessions_dir / f"{secrets.token_hex(3)}.jsonl"
+        if not path.exists():
+            return SessionStore(path)
 
 
 async def _pick_model() -> str | None:
@@ -260,40 +238,6 @@ async def _pick_model() -> str | None:
         for m in models:
             if m.name == choice:
                 return m.name
-
-        typer.echo(f"Invalid choice: {choice}")
-
-
-def _pick_session(manager: SessionManager, cwd: Path) -> str | None:
-    records = manager.list_sessions(cwd)
-    if not records:
-        typer.echo("No sessions found for this directory.")
-        return None
-
-    typer.echo("Sessions:")
-    for i, record in enumerate(records, 1):
-        title = record.title or "Untitled"
-        typer.echo(f"  {i}. {record.id}  {title}  {record.model}")
-
-    while True:
-        try:
-            choice = input("Select session (number or id, empty to cancel): ").strip()
-        except (EOFError, KeyboardInterrupt):
-            return None
-
-        if not choice:
-            return None
-
-        try:
-            idx = int(choice)
-            if 1 <= idx <= len(records):
-                return records[idx - 1].id
-        except ValueError:
-            pass
-
-        for r in records:
-            if r.id == choice:
-                return choice
 
         typer.echo(f"Invalid choice: {choice}")
 
