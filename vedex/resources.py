@@ -9,7 +9,6 @@ from pathlib import Path
 @dataclass(frozen=True, slots=True)
 class VedexPaths:
     home: Path = field(default_factory=lambda: Path.home() / ".vedex")
-    agents_home: Path = field(default_factory=lambda: Path.home() / ".agents")
 
     @property
     def sessions_dir(self) -> Path:
@@ -23,31 +22,14 @@ class VedexPaths:
     def user_prompts_dir(self) -> Path:
         return self.home / "prompts"
 
-    @property
-    def user_agents_skills_dir(self) -> Path:
-        return self.agents_home / "skills"
-
-    @property
-    def user_agents_prompts_dir(self) -> Path:
-        return self.agents_home / "prompts"
-
     def project_vedex_dir(self, cwd: Path) -> Path:
         return cwd / ".vedex"
-
-    def project_agents_dir(self, cwd: Path) -> Path:
-        return cwd / ".agents"
 
     def project_skills_dir(self, cwd: Path) -> Path:
         return self.project_vedex_dir(cwd) / "skills"
 
     def project_prompts_dir(self, cwd: Path) -> Path:
         return self.project_vedex_dir(cwd) / "prompts"
-
-    def project_agents_skills_dir(self, cwd: Path) -> Path:
-        return self.project_agents_dir(cwd) / "skills"
-
-    def project_agents_prompts_dir(self, cwd: Path) -> Path:
-        return self.project_agents_dir(cwd) / "prompts"
 
 
 class ResourceError(ValueError):
@@ -58,7 +40,6 @@ class ResourceError(ValueError):
 class ResourcePaths:
     root: Path = field(default_factory=lambda: Path.home() / ".vedex")
     cwd: Path | None = None
-    agents_root: Path | None = field(default_factory=lambda: Path.home() / ".agents")
     paths: VedexPaths | None = None
 
     @property
@@ -73,35 +54,20 @@ class ResourcePaths:
     def skills_dirs(self) -> tuple[Path, ...]:
         paths = self._paths()
         directories = [self.skills_dir]
-        if self.agents_root is not None:
-            directories.append(self.agents_root / "skills")
         if self.cwd is not None:
-            directories.extend(
-                [
-                    paths.project_skills_dir(self.cwd),
-                    paths.project_agents_skills_dir(self.cwd),
-                ]
-            )
+            directories.append(paths.project_skills_dir(self.cwd))
         return tuple(_dedupe_paths(directories))
 
     @property
     def prompts_dirs(self) -> tuple[Path, ...]:
         paths = self._paths()
         directories = [self.prompts_dir]
-        if self.agents_root is not None:
-            directories.append(self.agents_root / "prompts")
         if self.cwd is not None:
-            directories.extend(
-                [
-                    paths.project_prompts_dir(self.cwd),
-                    paths.project_agents_prompts_dir(self.cwd),
-                ]
-            )
+            directories.append(paths.project_prompts_dir(self.cwd))
         return tuple(_dedupe_paths(directories))
 
     def _paths(self) -> VedexPaths:
-        agents_home = self.agents_root or Path.home() / ".agents"
-        return self.paths or VedexPaths(home=self.root, agents_home=agents_home)
+        return self.paths or VedexPaths(home=self.root)
 
 
 def resource_paths_with_cwd(
@@ -115,7 +81,6 @@ def resource_paths_with_cwd(
     return ResourcePaths(
         root=paths.root,
         cwd=cwd,
-        agents_root=paths.agents_root,
         paths=paths.paths,
     )
 
@@ -267,17 +232,14 @@ def _load_markdown_resources(
 
 def _context_file_candidates(paths: ResourcePaths) -> tuple[Path, ...]:
     candidates: list[Path] = [paths.root / "AGENTS.md"]
-    if paths.agents_root is not None:
-        candidates.append(paths.agents_root / "AGENTS.md")
     if paths.cwd is not None:
         cwd = paths.cwd.expanduser().resolve()
         project_root = _find_project_root(cwd)
-        candidates.extend(_ancestor_agents_files(project_root, cwd))
+        candidates.extend(_project_context_candidates(project_root, cwd))
         vedex_paths = paths._paths()
         candidates.extend(
             [
                 vedex_paths.project_vedex_dir(cwd) / "AGENTS.md",
-                vedex_paths.project_agents_dir(cwd) / "AGENTS.md",
             ]
         )
     return tuple(_dedupe_resolved_paths([path for path in candidates if path.is_file()]))
@@ -291,7 +253,7 @@ def _find_project_root(cwd: Path) -> Path:
     return cwd
 
 
-def _ancestor_agents_files(project_root: Path, cwd: Path) -> list[Path]:
+def _project_context_candidates(project_root: Path, cwd: Path) -> list[Path]:
     try:
         relative = cwd.relative_to(project_root)
     except ValueError:

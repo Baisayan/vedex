@@ -369,14 +369,12 @@ def _parse_tool_call(raw: dict[str, object]) -> ToolCall:
 async def _execute_tool_calls(
     tool_calls: list[ToolCall],
     tool_by_name: Mapping[str, AgentTool],
-    messages: list[AgentMessage],
     signal: CancellationToken | None,
 ) -> AsyncIterator[AgentEvent]:
     for index, tool_call in enumerate(tool_calls):
         if signal is not None and signal.is_cancelled():
             for cancelled_tool_call in tool_calls[index:]:
                 result = _cancelled_tool_result(cancelled_tool_call)
-                messages.append(_tool_result_message(result))
                 yield ToolExecutionEndEvent(result=result)
             yield ErrorEvent(message="Agent run cancelled", recoverable=True)
             return
@@ -389,7 +387,6 @@ async def _execute_tool_calls(
         else:
             result = await _execute_tool(tool, tool_call, signal)
 
-        messages.append(_tool_result_message(result))
         yield ToolExecutionEndEvent(result=result)
 
 
@@ -436,7 +433,7 @@ def _cancelled_tool_result(tool_call: ToolCall) -> AgentToolResult:
     )
 
 
-def _tool_result_message(result: AgentToolResult) -> ToolResultMessage:
+def tool_result_message(result: AgentToolResult) -> ToolResultMessage:
     data: dict[str, JSONValue] | None = result.data
     content = result.content
     if not result.ok and result.error and result.error not in content:
@@ -558,8 +555,6 @@ async def run_agent_loop(
             stream_failed = True
 
         if stream_failed:
-            partial = AssistantMessage(content="".join(content_parts))
-            yield MessageEndEvent(message=partial)
             yield TurnEndEvent(turn=turn)
             break
 
@@ -567,7 +562,6 @@ async def run_agent_loop(
             content="".join(content_parts),
             tool_calls=tool_calls,
         )
-        messages.append(assistant_message)
         yield MessageEndEvent(message=assistant_message)
 
         if not assistant_message.tool_calls:
@@ -577,7 +571,6 @@ async def run_agent_loop(
         async for tool_event in _execute_tool_calls(
             assistant_message.tool_calls,
             tool_by_name,
-            messages,
             signal,
         ):
             yield tool_event
