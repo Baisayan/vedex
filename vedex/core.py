@@ -9,7 +9,8 @@ from uuid import uuid4
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from schema import (
+
+from .schema import (
     AgentEndEvent,
     AgentEvent,
     AgentMessage,
@@ -95,7 +96,10 @@ class OllamaClient:
                     async with client.stream("POST", url, json=body) as response:
                         if response.status_code >= 400:
                             await response.aread()
-                            if attempt < self._max_retries and response.status_code in _TRANSIENT_STATUSES:
+                            if (
+                                attempt < self._max_retries
+                                and response.status_code in _TRANSIENT_STATUSES
+                            ):
                                 continue
                             response.raise_for_status()
                             return
@@ -125,7 +129,7 @@ class OllamaClient:
 
 
 async def _backoff(attempt: int, signal: CancellationToken | None) -> bool:
-    delay = min(_RETRY_BASE_DELAY * (2 ** attempt), _RETRY_MAX_DELAY)
+    delay = min(_RETRY_BASE_DELAY * (2**attempt), _RETRY_MAX_DELAY)
     remaining = delay
     while remaining > 0:
         if signal is not None and signal.is_cancelled():
@@ -150,6 +154,7 @@ def _parse_object(line: str) -> dict[str, Any] | None:
 
 
 # Wire types (Ollama protocol)
+
 
 @dataclass(frozen=True, slots=True)
 class _OllamaMessage:
@@ -226,6 +231,7 @@ class _ChatChunk(BaseModel):
 
 # Model discovery
 
+
 @dataclass(frozen=True, slots=True)
 class OllamaModelInfo:
     name: str
@@ -295,11 +301,9 @@ def _parse_model_info(value: Any) -> OllamaModelInfo | None:
     )
 
     return OllamaModelInfo(
-        name=name,
-        context_length=context_length,
-        supports_tools="tools" in capabilities
+        name=name, context_length=context_length, supports_tools="tools" in capabilities
     )
-    
+
 
 def _build_request(
     *,
@@ -321,11 +325,7 @@ def _build_request(
         for t in tools
     ]
 
-    return _ChatRequest(
-        model=model,
-        messages=ollama_messages,
-        tools=ollama_tools
-    )
+    return _ChatRequest(model=model, messages=ollama_messages, tools=ollama_tools)
 
 
 def _to_ollama_message(message: AgentMessage) -> _OllamaMessage:
@@ -334,9 +334,9 @@ def _to_ollama_message(message: AgentMessage) -> _OllamaMessage:
 
     if isinstance(message, AssistantMessage):
         tool_calls = (
-            [_OllamaToolCall(name=c.name, arguments=dict(c.arguments))
-             for c in message.tool_calls]
-            if message.tool_calls else None
+            [_OllamaToolCall(name=c.name, arguments=dict(c.arguments)) for c in message.tool_calls]
+            if message.tool_calls
+            else None
         )
         return _OllamaMessage(role="assistant", content=message.content, tool_calls=tool_calls)
 
@@ -364,6 +364,7 @@ def _parse_tool_call(raw: dict[str, object]) -> ToolCall:
 
 
 # Tool execution
+
 
 async def _execute_tool_calls(
     tool_calls: list[ToolCall],
@@ -455,6 +456,7 @@ def _tool_result_message(result: AgentToolResult) -> ToolResultMessage:
 
 
 # Agent entry point
+
 
 async def run_agent_loop(
     *,

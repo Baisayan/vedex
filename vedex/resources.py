@@ -9,9 +9,10 @@ from hashlib import sha256
 from pathlib import Path
 from xml.sax.saxutils import escape
 
-from schema import AgentTool
+from .schema import AgentTool
 
 # Paths
+
 
 @dataclass(frozen=True, slots=True)
 class VedexPaths:
@@ -98,6 +99,7 @@ def _slugify_path(path: Path, *, max_length: int = 72) -> str:
 
 
 # Resources
+
 
 class ResourceError(ValueError):
     """Raised when resources are invalid."""
@@ -278,9 +280,7 @@ def _load_markdown_resources(
         for path in files:
             name = path.stem
             if name in seen_names:
-                _warn_optional_resource(
-                    f"duplicate {resource_kind} '{name}' ignored: {path}"
-                )
+                _warn_optional_resource(f"duplicate {resource_kind} '{name}' ignored: {path}")
                 continue
             seen_names.add(name)
             try:
@@ -288,7 +288,9 @@ def _load_markdown_resources(
                 metadata, content = parse_markdown_resource(raw)
                 description = metadata.get("description") or derive_description(content)
                 all_resources.append(
-                    _MarkdownResource(name=name, path=path, content=content, description=description)
+                    _MarkdownResource(
+                        name=name, path=path, content=content, description=description
+                    )
                 )
             except (OSError, UnicodeDecodeError) as exc:
                 _warn_optional_resource(f"could not read {resource_kind} {path}: {exc}")
@@ -301,6 +303,7 @@ def _warn_optional_resource(message: str) -> None:
 
 
 # Skills
+
 
 @dataclass(frozen=True, slots=True)
 class Skill:
@@ -530,6 +533,7 @@ def _dedupe_resolved_paths(paths: list[Path]) -> list[Path]:
 
 
 # System prompt
+
 
 @dataclass(frozen=True, slots=True)
 class BuildSystemPromptOptions:

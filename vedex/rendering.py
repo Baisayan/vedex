@@ -5,7 +5,8 @@ from typing import Any
 import typer
 from rich.console import Console
 from rich.text import Text
-from schema import (
+
+from .schema import (
     AgentEndEvent,
     AgentEvent,
     ErrorEvent,
@@ -22,7 +23,6 @@ TOOL_RESULT_PREVIEW_CHARS = 1_500
 
 
 class CommandLineRenderer:
-
     def __init__(self) -> None:
         self._assistant_started = False
         self._assistant_ended = False
@@ -80,6 +80,7 @@ class CommandLineRenderer:
         elif final and not self._assistant_started:
             self._assistant_ended = True
 
+
 def format_tool_call_block(tool_call: ToolCall) -> str:
     arguments = tool_call.arguments or {}
     name = tool_call.name
@@ -87,17 +88,17 @@ def format_tool_call_block(tool_call: ToolCall) -> str:
     if name == "read":
         path = arguments.get("path", "unknown")
         return f"→ read {path}{_read_line_suffix(arguments)}"
-    
+
     if name in ("edit", "write"):
         path = arguments.get("path", "unknown")
         return f"→ {name} {path}"
-        
+
     if name == "bash":
         command = arguments.get("command", "")
         timeout = arguments.get("timeout")
         suffix = f" (timeout {timeout}s)" if timeout is not None else ""
         return f"$ {command}{suffix}"
-        
+
     if arguments:
         return f"→ {name} {arguments}"
     return f"→ {name}"
@@ -133,6 +134,7 @@ def _preview_text(text: str, *, max_lines: int) -> str:
             details.append(f"{hidden_lines} more lines")
         if truncated_by_chars:
             details.append("additional characters")
-        preview = f"{preview}\n\n  [Output truncated for terminal safety: {', '.join(details)} hidden]"
+        preview = (
+            f"{preview}\n\n  [Output truncated for terminal safety: {', '.join(details)} hidden]"
+        )
     return preview
-            

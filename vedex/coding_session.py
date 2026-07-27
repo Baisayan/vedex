@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 
-from commands import CommandRegistry, CommandResult, create_default_command_registry
-from context_window import (
+from .commands import CommandRegistry, CommandResult, create_default_command_registry
+from .context_window import (
     DEFAULT_COMPACTION_KEEP_RECENT_TOKENS,
     DEFAULT_CONTEXT_WINDOW_TOKENS,
     ContextUsageEstimate,
@@ -15,8 +15,8 @@ from context_window import (
     estimate_context_usage,
     estimate_message_tokens,
 )
-from core import OllamaClient, get_model_info, run_agent_loop
-from resources import (
+from .core import OllamaClient, get_model_info, run_agent_loop
+from .resources import (
     BuildSystemPromptOptions,
     ProjectContextFile,
     PromptTemplate,
@@ -33,7 +33,7 @@ from resources import (
     load_skills,
     resource_paths_with_cwd,
 )
-from schema import (
+from .schema import (
     AgentEvent,
     AgentMessage,
     AgentTool,
@@ -42,7 +42,7 @@ from schema import (
     ToolExecutionEndEvent,
     UserMessage,
 )
-from session import (
+from .session import (
     CompactionEntry,
     JsonlSessionStorage,
     MessageEntry,
@@ -54,8 +54,7 @@ from session import (
     SessionStorage,
     entry_from_json_line,
 )
-from session_manager import SessionManager
-from tools import create_bash_tool, create_coding_tools
+from .tools import create_bash_tool, create_coding_tools
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,15 +97,12 @@ class CodingSessionConfig:
     context_files: tuple[ProjectContextFile, ...] = ()
     tools: list[AgentTool] | None = None
     resource_paths: ResourcePaths | None = None
-    session_id: str | None = None
-    session_manager: SessionManager | None = None
     command_registry: CommandRegistry | None = None
     auto_compact_token_threshold: int | None = None
     auto_compact_enabled: bool = True
 
 
 class CodingSession:
-
     def __init__(
         self,
         config: CodingSessionConfig,
@@ -150,11 +146,7 @@ class CodingSession:
             await config.storage.append(model_entry)
 
         state = SessionState.from_entries(entries)
-        tools = (
-            config.tools
-            if config.tools is not None
-            else create_coding_tools(cwd=config.cwd)
-        )
+        tools = config.tools if config.tools is not None else create_coding_tools(cwd=config.cwd)
         resource_paths = resource_paths_with_cwd(config.resource_paths, config.cwd)
         resources = _load_session_resources(resource_paths, config.context_files)
         system = (
@@ -264,30 +256,8 @@ class CodingSession:
     def command_registry(self) -> CommandRegistry:
         return self._command_registry
 
-    @property
-    def session_id(self) -> str | None:
-        return self._config.session_id
-
-    @property
-    def session_title(self) -> str | None:
-        if self._config.session_id is None or self._config.session_manager is None:
-            return None
-        record = self._config.session_manager.get_session(self._config.session_id)
-        if record is None:
-            return None
-        return record.title
-
-    @property
-    def session_manager(self) -> SessionManager | None:
-        return self._config.session_manager
-
     def set_model(self, model: str) -> None:
         self._model = model
-        if self._config.session_id is not None and self._config.session_manager is not None:
-            self._config.session_manager.touch_session(
-                self._config.session_id,
-                model=model,
-            )
 
     def reload(self) -> ReloadSummary:
         before_skills = _skill_signatures(self._skills)
@@ -343,76 +313,6 @@ class CodingSession:
             system_prompt_rebuilt=system_prompt_rebuilt,
         )
 
-    async def resume(self, session_id: str) -> str:
-        manager = self._config.session_manager
-        if manager is None:
-            raise ValueError("Session manager is not available")
-        record = manager.get_session(session_id)
-        if record is None:
-            raise ValueError(f"Unknown session: {session_id}")
-
-        replacement = await type(self).load(
-            CodingSessionConfig(
-                ollama_host=self._config.ollama_host,
-                model=record.model,
-                cwd=record.cwd,
-                storage=jsonl_session_storage(record.path),
-                system=self._config.system,
-                custom_system_prompt=self._config.custom_system_prompt,
-                append_system_prompt=self._config.append_system_prompt,
-                context_files=self._config.context_files,
-                resource_paths=self._config.resource_paths,
-                session_id=record.id,
-                session_manager=manager,
-                command_registry=self._command_registry,
-                auto_compact_token_threshold=self._auto_compact_token_threshold,
-                auto_compact_enabled=self._auto_compact_enabled,
-            )
-        )
-        self._adopt_replacement(replacement)
-        return f"Resumed session: {record.id}"
-
-    async def new_session(self) -> str:
-        manager = self._config.session_manager
-        if manager is None:
-            raise ValueError("Session manager is not available")
-
-        model = self._model
-
-        record = manager.prepare_session(
-            cwd=self.cwd,
-            model=model,
-        )
-        replacement = await type(self).load(
-            replace(
-                self._config,
-                model=record.model or model,
-                cwd=record.cwd,
-                storage=jsonl_session_storage(record.path),
-                session_id=record.id,
-            )
-        )
-        self._adopt_replacement(replacement)
-        return f"Started new session: {record.id}"
-
-    def _adopt_replacement(self, replacement: CodingSession) -> None:
-        self._config = replacement._config
-        self._state = replacement._state
-        self._model = replacement._model
-        self._system_prompt = replacement._system_prompt
-        self._messages = replacement._messages
-        self._tools = replacement._tools
-        self._client = replacement._client
-        self._ollama_context_length = replacement._ollama_context_length
-        self._invalidate_context_usage_cache()
-        self._skills = replacement._skills
-        self._prompt_templates = replacement._prompt_templates
-        self._context_files = replacement._context_files
-        self._command_registry = replacement._command_registry
-        self._resource_paths = replacement._resource_paths
-        self._auto_compact_token_threshold = replacement._auto_compact_token_threshold
-        self._auto_compact_enabled = replacement._auto_compact_enabled
-
     async def compact(self) -> str:
         plan = self._manual_compaction_plan()
         summary = build_truncation_summary(plan.messages_to_summarize)
@@ -429,16 +329,6 @@ class CodingSession:
         if expand_prompt_template_command(text, self._prompt_templates) is not None:
             return CommandResult(handled=False)
         return await self._command_registry.execute(self, text)
-
-    def ensure_session_indexed(self) -> None:
-        if self._config.session_id is None or self._config.session_manager is None:
-            return
-        if self._config.session_manager.get_session(self._config.session_id) is None:
-            self._config.session_manager.create_session(
-                cwd=self.cwd,
-                model=self._model,
-                session_id=self._config.session_id,
-            )
 
     def expand_prompt_text(self, text: str) -> str:
         expanded_prompt = expand_prompt_template_command(text, self._prompt_templates)
@@ -589,11 +479,6 @@ class CodingSession:
     async def _refresh_persisted_state(self) -> None:
         entries = await self._read_session_entries()
         self._state = SessionState.from_entries(entries)
-        if self._config.session_id is not None and self._config.session_manager is not None:
-            self._config.session_manager.touch_session(
-                self._config.session_id,
-                model=self._model,
-            )
 
     async def _read_session_entries(self) -> list[SessionEntry]:
         return await _read_compatible_entries(self._config.storage)

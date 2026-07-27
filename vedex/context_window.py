@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from schema import AgentMessage, AgentTool, JSONValue
+from .schema import AgentMessage, AgentTool, JSONValue
 
 CHARS_PER_TOKEN = 4
 MESSAGE_OVERHEAD_TOKENS = 4
@@ -97,10 +97,7 @@ def build_truncation_summary(messages: tuple[AgentMessage, ...]) -> str:
     last_assistant_content: str | None = None
 
     for message in messages:
-        if (
-            message.role == "user"
-            and message.content.startswith(COMPACTION_SUMMARY_PREFIX)
-        ):
+        if message.role == "user" and message.content.startswith(COMPACTION_SUMMARY_PREFIX):
             continue
 
         if message.role == "user" and first_user_content is None:

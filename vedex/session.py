@@ -7,7 +7,8 @@ from typing import Annotated, Literal, Protocol
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
-from schema import AgentMessage, UserMessage
+
+from .schema import AgentMessage, UserMessage
 
 
 def new_entry_id() -> str:
@@ -48,7 +49,8 @@ class SessionInfoEntry(BaseSessionEntry):
 
 
 type SessionEntry = Annotated[
-    MessageEntry | ModelChangeEntry | CompactionEntry | SessionInfoEntry, Field(discriminator="type"),
+    MessageEntry | ModelChangeEntry | CompactionEntry | SessionInfoEntry,
+    Field(discriminator="type"),
 ]
 
 
@@ -145,11 +147,9 @@ def entries_from_json_lines(lines: list[str]) -> list[SessionEntry]:
 
 
 class SessionStorage(Protocol):
-    async def append(self, entry: SessionEntry) -> None:
-        ...
+    async def append(self, entry: SessionEntry) -> None: ...
 
-    async def read_all(self) -> list[SessionEntry]:
-        ...
+    async def read_all(self) -> list[SessionEntry]: ...
 
 
 class JsonlSessionStorage:

@@ -3,20 +3,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from core import list_model_info
-from resources import (
+from .core import list_model_info
+from .resources import (
     ProjectContextFile,
     PromptTemplate,
     ReloadCategorySummary,
     ReloadSummary,
     Skill,
 )
-from schema import AgentTool
-from session_manager import SessionManager
+from .schema import AgentTool
 
 
 class CommandSession(Protocol):
-    
     @property
     def cwd(self) -> Path: ...
 
@@ -47,17 +45,6 @@ class CommandSession(Protocol):
     @property
     def system_prompt(self) -> str: ...
 
-    @property
-    def session_id(self) -> str | None: ...
-
-    @property
-    def session_title(self) -> str | None: ...
-
-    @property
-    def session_manager(self) -> SessionManager | None: ...
-
-    def ensure_session_indexed(self) -> None: ...
-
     def set_model(self, model: str) -> None: ...
 
     def reload(self) -> ReloadSummary: ...
@@ -65,22 +52,17 @@ class CommandSession(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class CommandResult:
-
     handled: bool
     exit_requested: bool = False
     clear_requested: bool = False
-    new_session_requested: bool = False
-    resume_session_id: str | None = None
-    resume_picker_requested: bool = False
     model_picker_requested: bool = False
     message: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class CommandContext:
-
     session: CommandSession
-    registry: 'CommandRegistry'
+    registry: "CommandRegistry"
     text: str
     name: str
     args: str
@@ -91,7 +73,6 @@ CommandHandler = Callable[[CommandContext], Awaitable[CommandResult]]
 
 @dataclass(frozen=True, slots=True)
 class SlashCommand:
-
     name: str
     description: str
     usage: str
@@ -101,7 +82,6 @@ class SlashCommand:
 
 
 class CommandRegistry:
-
     def __init__(self) -> None:
         self._commands: dict[str, SlashCommand] = {}
         self._aliases: dict[str, str] = {}
@@ -172,15 +152,6 @@ def create_default_command_registry() -> CommandRegistry:
     )
     registry.register(
         SlashCommand(
-            name="new",
-            usage="/new",
-            description="Start a new session.",
-            handler=_new_command,
-            search_terms=("clear", "reset"),
-        )
-    )
-    registry.register(
-        SlashCommand(
             name="session",
             usage="/session",
             description="Show session info and stats.",
@@ -232,24 +203,6 @@ def create_default_command_registry() -> CommandRegistry:
     )
     registry.register(
         SlashCommand(
-            name="resume",
-            usage="/resume [session-id]",
-            description="Resume a previous session.",
-            handler=_resume_command,
-            search_terms=("history", "previous"),
-        )
-    )
-    registry.register(
-        SlashCommand(
-            name="name",
-            usage="/name <new name>",
-            description="Rename the current session.",
-            handler=_name_command,
-            search_terms=("rename", "title"),
-        )
-    )
-    registry.register(
-        SlashCommand(
             name="model",
             usage="/model",
             description="Choose the active model.",
@@ -268,10 +221,6 @@ async def _help_command(context: CommandContext) -> CommandResult:
 
 async def _exit_command(context: CommandContext) -> CommandResult:
     return CommandResult(handled=True, exit_requested=True, message="Exiting session.")
-
-
-async def _new_command(context: CommandContext) -> CommandResult:
-    return CommandResult(handled=True, new_session_requested=True)
 
 
 async def _status_command(context: CommandContext) -> CommandResult:
@@ -294,10 +243,6 @@ async def _status_command(context: CommandContext) -> CommandResult:
             f"messages={context_usage.message_tokens}, "
             f"tools={context_usage.tool_tokens}",
         )
-    if session.session_id is not None:
-        lines.append(f"Session: {session.session_id}")
-    if session.session_title:
-        lines.append(f"Session name: {session.session_title}")
     return CommandResult(handled=True, message="\n".join(lines))
 
 
@@ -348,55 +293,6 @@ async def _skill_command(context: CommandContext) -> CommandResult:
     )
 
 
-async def _resume_command(context: CommandContext) -> CommandResult:
-    if not context.args:
-        return CommandResult(handled=True, resume_picker_requested=True)
-    manager = context.session.session_manager
-    if manager is None:
-        return CommandResult(handled=True, message="Session manager is not available.")
-    session_id = context.args.strip()
-    if manager.get_session(session_id) is None:
-        return CommandResult(handled=True, message=f"Unknown session: {session_id}")
-    return CommandResult(
-        handled=True,
-        resume_session_id=session_id,
-    )
-
-
-async def _name_command(context: CommandContext) -> CommandResult:
-    manager = context.session.session_manager
-    session_id = context.session.session_id
-    if manager is None or session_id is None:
-        return CommandResult(handled=True, message="Session manager is not available.")
-
-    if not context.args:
-        record = manager.get_session(session_id)
-        title = (
-            record.title if record is not None else context.session.session_title
-        ) or "Untitled session"
-        return CommandResult(
-            handled=True,
-            message=f"Current session name: {title}\nUsage: /name <new name>",
-        )
-
-    try:
-        name = _validated_session_name(context.args)
-    except ValueError as exc:
-        return CommandResult(handled=True, message=str(exc))
-
-    if manager.get_session(session_id) is None:
-        context.session.ensure_session_indexed()
-
-    updated = manager.touch_session(
-        session_id,
-        model=context.session.model,
-        title=name,
-    )
-    if updated is None:
-        return CommandResult(handled=True, message=f"Unknown current session: {session_id}")
-    return CommandResult(handled=True, message=f"Session renamed: {updated.title}")
-
-
 async def _model_command(context: CommandContext) -> CommandResult:
     if context.args:
         model = context.args.strip()
@@ -411,7 +307,7 @@ async def _model_command(context: CommandContext) -> CommandResult:
                 )
         except Exception as exc:
             return CommandResult(handled=True, message=f"Could not connect to Ollama: {exc}")
-        
+
         context.session.set_model(model)
         return CommandResult(handled=True, message=f"Current model set to: {model}")
 
@@ -448,15 +344,6 @@ def _format_count_delta(delta: int) -> str | None:
 def _parse_command(text: str) -> tuple[str, str]:
     command, separator, args = text[1:].partition(" ")
     return _normalize_name(command), args.strip() if separator else ""
-
-
-def _validated_session_name(value: str) -> str:
-    name = value.strip()
-    if not name:
-        raise ValueError("Usage: /name <new name>")
-    if any(char in name for char in "\r\n\t"):
-        raise ValueError("Session name must be a single line.")
-    return name
 
 
 def _normalize_name(name: str) -> str:
