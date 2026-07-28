@@ -3,115 +3,64 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
-import tempfile
 from collections.abc import Mapping
-from dataclasses import dataclass
-from json import JSONDecodeError, loads
 from pathlib import Path
 from time import monotonic
 from typing import Any
 
-from ..resources import VedexPaths
 from ..schema import AgentTool, AgentToolResult, CancellationToken, JSONValue
 from .base import (
     DEFAULT_MAX_OUTPUT_BYTES,
     DEFAULT_MAX_OUTPUT_LINES,
     ToolDefinition,
     ToolInputError,
-    _optional_float_arg,
+    _optional_int_arg,
     _str_arg,
     append_status_block,
     format_size,
     truncate_tail,
 )
 
-
-class ShellConfigError(ValueError):
-    """Raised when shell settings are invalid."""
-
-
-@dataclass(frozen=True, slots=True)
-class ShellSettings:
-    shell_command_prefix: str | None = None
-
-    def to_json(self) -> dict[str, str]:
-        if self.shell_command_prefix is None:
-            return {}
-        return {"shellCommandPrefix": self.shell_command_prefix}
-
-
-def shell_settings_path(paths: VedexPaths | None = None) -> Path:
-    return (paths or VedexPaths()).home / "settings.json"
-
-
-def load_shell_settings(paths: VedexPaths | None = None) -> ShellSettings:
-    path = shell_settings_path(paths)
-    if not path.exists():
-        return ShellSettings()
-    try:
-        raw = loads(path.read_text(encoding="utf-8"))
-    except JSONDecodeError as exc:
-        raise ShellConfigError(f"Shell settings are not valid JSON: {path}") from exc
-    if not isinstance(raw, dict):
-        raise ShellConfigError("Shell settings must be a JSON object")
-    return shell_settings_from_json(raw)
-
-
-def shell_settings_from_json(data: dict[str, Any]) -> ShellSettings:
-    allowed_fields = {"shellCommandPrefix", "shell_command_prefix"}
-    unknown_fields = set(data) - allowed_fields
-    if unknown_fields:
-        raise ShellConfigError(f"Unknown shell settings field: {sorted(unknown_fields)[0]}")
-    if "shellCommandPrefix" in data and "shell_command_prefix" in data:
-        raise ShellConfigError("Use only one of shellCommandPrefix or shell_command_prefix")
-
-    raw_prefix = data.get("shellCommandPrefix", data.get("shell_command_prefix"))
-    if raw_prefix is None:
-        return ShellSettings()
-    if not isinstance(raw_prefix, str):
-        raise ShellConfigError("shellCommandPrefix must be a string")
-    prefix = raw_prefix.strip()
-    return ShellSettings(shell_command_prefix=prefix or None)
+DEFAULT_TIMEOUT_SECONDS = 120
+MAX_TIMEOUT_SECONDS = 600
 
 
 def create_bash_tool_definition(
     *,
     cwd: str | Path | None = None,
-    shell_command_prefix: str | None = None,
 ) -> ToolDefinition:
     root = Path.cwd() if cwd is None else Path(cwd)
-    prefix = shell_command_prefix.strip() if shell_command_prefix else None
 
     async def execute(
         arguments: Mapping[str, JSONValue],
         signal: CancellationToken | None = None,
     ) -> AgentToolResult:
         command = _str_arg(arguments, "command")
-        shell_command = _prefixed_shell_command(command, prefix)
-        timeout = _optional_float_arg(arguments, "timeout")
-        if timeout is not None and timeout <= 0:
-            raise ToolInputError("timeout must be greater than 0")
+        timeout = _optional_int_arg(arguments, "timeout")
+        if timeout is None:
+            timeout = DEFAULT_TIMEOUT_SECONDS
+        if not 1 <= timeout <= MAX_TIMEOUT_SECONDS:
+            raise ToolInputError(f"timeout must be between 1 and {MAX_TIMEOUT_SECONDS} seconds")
         if signal is not None and signal.is_cancelled():
             raise ToolInputError("Command cancelled")
 
         start = monotonic()
         if os.name == "posix":
             process = await asyncio.create_subprocess_shell(
-                shell_command,
+                command,
                 cwd=root,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
                 start_new_session=True,
-                executable="bash" if prefix else None,
             )
         else:
             process = await asyncio.create_subprocess_shell(
-                shell_command,
+                command,
                 cwd=root,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
             )
-        output_bytes, _stderr, timed_out, cancelled = await _communicate_with_cancellation(
+        output_bytes, timed_out, cancelled = await _communicate_with_cancellation(
             process,
             timeout=timeout,
             signal=signal,
@@ -119,35 +68,17 @@ def create_bash_tool_definition(
 
         output = output_bytes.decode(errors="replace")
         truncation = truncate_tail(output)
-        full_output_path: str | None = None
         output_text = truncation.content or "(no output)"
         if truncation.truncated:
-            full_output_path = _write_temp_output(output)
-            start_line = truncation.total_lines - truncation.output_lines + 1
-            end_line = truncation.total_lines
-            if truncation.last_line_partial:
-                output_text += (
-                    f"\n\n[Showing last {format_size(truncation.output_bytes)} of line {end_line}. "
-                    f"Full output: {full_output_path}]"
-                )
-            elif truncation.truncated_by == "lines":
-                output_text += (
-                    f"\n\n[Showing lines {start_line}-{end_line} of {truncation.total_lines}. "
-                    f"Full output: {full_output_path}]"
-                )
-            else:
-                output_text += (
-                    f"\n\n[Showing lines {start_line}-{end_line} of {truncation.total_lines} "
-                    f"({format_size(DEFAULT_MAX_OUTPUT_BYTES)} limit). "
-                    f"Full output: {full_output_path}]"
-                )
+            output_text = append_status_block(
+                output_text,
+                f"Output truncated to the last {format_size(truncation.output_bytes)}.",
+            )
 
         exit_code = process.returncode
         status: str | None = None
         if timed_out:
-            status = (
-                f"Command timed out after {timeout:g} seconds" if timeout else "Command timed out"
-            )
+            status = f"Command timed out after {timeout} seconds"
         elif cancelled:
             status = "Command cancelled"
         elif exit_code not in (0, None):
@@ -169,28 +100,30 @@ def create_bash_tool_definition(
                 "cancelled": cancelled,
                 "duration_seconds": round(monotonic() - start, 3),
                 "truncation": truncation.to_json(),
-                "full_output_path": full_output_path,
-                "shell_command_prefix_applied": prefix is not None,
             },
         )
 
     return ToolDefinition(
         name="bash",
         description=(
-            "Execute a bash command in the current working directory. Returns stdout and stderr. "
+            "Execute a shell command in the current working directory. Returns stdout and stderr. "
             f"Output is truncated to last {DEFAULT_MAX_OUTPUT_LINES} lines or "
-            f"{DEFAULT_MAX_OUTPUT_BYTES // 1024}KB (whichever is hit first). If truncated, "
-            "full output is saved to a temp file. Optionally provide a timeout in seconds."
+            f"{DEFAULT_MAX_OUTPUT_BYTES // 1024}KB (whichever is hit first). Commands time out "
+            f"after {DEFAULT_TIMEOUT_SECONDS} seconds by default; the maximum is "
+            f"{MAX_TIMEOUT_SECONDS} seconds."
         ),
-        prompt_snippet="Execute bash commands (ls, grep, find, etc.)",
+        prompt_snippet="Execute shell commands (ls, grep, find, etc.)",
         prompt_guidelines=(),
         input_schema={
             "type": "object",
             "properties": {
-                "command": {"type": "string", "description": "Bash command to execute"},
+                "command": {"type": "string", "description": "Shell command to execute"},
                 "timeout": {
-                    "type": "number",
-                    "description": "Timeout in seconds (optional, no default timeout)",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": MAX_TIMEOUT_SECONDS,
+                    "default": DEFAULT_TIMEOUT_SECONDS,
+                    "description": "Timeout in seconds.",
                 },
             },
             "required": ["command"],
@@ -202,26 +135,16 @@ def create_bash_tool_definition(
 def create_bash_tool(
     *,
     cwd: str | Path | None = None,
-    shell_command_prefix: str | None = None,
 ) -> AgentTool:
-    return create_bash_tool_definition(
-        cwd=cwd,
-        shell_command_prefix=shell_command_prefix,
-    ).to_agent_tool()
-
-
-def _prefixed_shell_command(command: str, prefix: str | None) -> str:
-    if prefix is None:
-        return command
-    return f"{prefix}\n{command}"
+    return create_bash_tool_definition(cwd=cwd).to_agent_tool()
 
 
 async def _communicate_with_cancellation(
     process: asyncio.subprocess.Process,
     *,
-    timeout: float | None,
+    timeout: float,
     signal: CancellationToken | None,
-) -> tuple[bytes, bytes | None, bool, bool]:
+) -> tuple[bytes, bool, bool]:
     communicate = asyncio.create_task(process.communicate())
     cancel_watch: asyncio.Task[None] | None = None
     try:
@@ -236,19 +159,13 @@ async def _communicate_with_cancellation(
             return_when=asyncio.FIRST_COMPLETED,
         )
         if communicate in done:
-            output_bytes, stderr = communicate.result()
-            return output_bytes, stderr, False, False
+            output_bytes, _stderr = communicate.result()
+            return output_bytes, False, False
 
         cancelled = cancel_watch is not None and cancel_watch in done
         _kill_process_tree(process)
-        try:
-            output_bytes, stderr = await communicate
-        except asyncio.CancelledError:
-            output_bytes = b""
-            stderr_result: bytes | None = None
-        else:
-            stderr_result = stderr
-        return output_bytes, stderr_result, not cancelled, cancelled
+        output_bytes, _stderr = await communicate
+        return output_bytes, not cancelled, cancelled
     except asyncio.CancelledError:
         _kill_process_tree(process)
         if not communicate.done():
@@ -279,15 +196,3 @@ def _kill_process_tree(process: asyncio.subprocess.Process) -> None:
             process.kill()
         except ProcessLookupError:
             return
-
-
-def _write_temp_output(output: str) -> str:
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        prefix="vedex-bash-",
-        suffix=".txt",
-        delete=False,
-    ) as handle:
-        handle.write(output)
-        return handle.name

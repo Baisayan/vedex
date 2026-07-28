@@ -10,8 +10,6 @@ from vedex.tools import (
     apply_edits_to_normalized_content,
     create_edit_tool,
     detect_line_ending,
-    generate_diff_string,
-    generate_unified_patch,
     normalize_to_lf,
     restore_line_endings,
 )
@@ -19,7 +17,7 @@ from vedex.tools import (
 from .conftest import run_async
 
 
-def test_edit_applies_disjoint_original_matches_and_reports_patch(tmp_path: Path) -> None:
+def test_edit_applies_disjoint_original_matches(tmp_path: Path) -> None:
     path = tmp_path / "file.txt"
     path.write_text("alpha\nbeta\ngamma", encoding="utf-8")
     tool = create_edit_tool(cwd=tmp_path)
@@ -37,10 +35,7 @@ def test_edit_applies_disjoint_original_matches_and_reports_patch(tmp_path: Path
     )
 
     assert path.read_text(encoding="utf-8") == "one\nbeta\nthree"
-    assert result.data is not None
-    assert result.data["edits"] == 2
-    assert "-alpha" in str(result.data["patch"])
-    assert result.data["first_changed_line"] == 1
+    assert result.content == f"Edited {path}: 2 replacement(s)."
 
 
 def test_edit_accepts_json_and_legacy_edit_arguments_and_preserves_bom_crlf(tmp_path: Path) -> None:
@@ -106,11 +101,7 @@ def test_edit_rejects_directory_and_non_object_edit_entries(tmp_path: Path) -> N
         )
 
 
-def test_edit_formatting_helpers_cover_lf_crlf_diff_and_patch() -> None:
+def test_edit_formatting_helpers_cover_lf_and_crlf() -> None:
     assert detect_line_ending("one\r\ntwo\n") == "\r\n"
     assert normalize_to_lf("one\r\ntwo\rthree") == "one\ntwo\nthree"
     assert restore_line_endings("one\ntwo", "\r\n") == "one\r\ntwo"
-    diff, first_line = generate_diff_string("one\ntwo", "one\nthree")
-    assert "- two" in diff
-    assert first_line == 2
-    assert "--- file" in generate_unified_patch("file", "one\n", "two\n")

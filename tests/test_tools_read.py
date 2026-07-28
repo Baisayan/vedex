@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 from pathlib import Path
 
 import pytest
@@ -18,9 +17,9 @@ def test_read_text_offsets_limits_and_continuation_hints(tmp_path: Path) -> None
     first = run_async(tool.execute({"path": "notes.txt", "limit": 2}))
     second = run_async(tool.execute({"path": "notes.txt", "offset": 3, "limit": 1}))
 
-    assert first.content.startswith("one\ntwo")
+    assert first.content.startswith("     1  one\n     2  two")
     assert "Use offset=3" in first.content
-    assert second.content.startswith("three")
+    assert second.content.startswith("     3  three")
     assert "Use offset=4" in second.content
 
 
@@ -32,8 +31,9 @@ def test_read_rejects_invalid_paths_offsets_and_limits(tmp_path: Path) -> None:
     invalid_arguments: list[dict[str, JSONValue]] = [
         {"path": "missing.txt"},
         {"path": "directory"},
-        {"path": "file.txt", "offset": -1},
+        {"path": "file.txt", "offset": 0},
         {"path": "file.txt", "limit": 0},
+        {"path": "file.txt", "limit": 2_001},
         {"path": "file.txt", "offset": 2},
         {"path": 3},
     ]
@@ -52,30 +52,26 @@ def test_read_truncates_many_lines_and_large_single_line(tmp_path: Path) -> None
     line_result = run_async(tool.execute({"path": "many.txt"}))
     huge_result = run_async(tool.execute({"path": "huge.txt"}))
 
-    assert "Showing lines 1-2000 of 2001" in line_result.content
+    assert "1 more lines in file. Use offset=2001" in line_result.content
     assert "exceeds 50.0KB limit" in huge_result.content
-    assert "Use bash:" in huge_result.content
+    assert "Use bash to inspect it" in huge_result.content
 
 
-def test_read_supported_image_returns_base64_metadata(tmp_path: Path) -> None:
-    path = tmp_path / "image.png"
-    payload = b"not-a-real-png-but-metadata-is-supported"
-    path.write_bytes(payload)
+@pytest.mark.parametrize("content", [b"\x89PNG\r\n\x1a\n", b"text\0binary"])
+def test_read_rejects_non_utf8_or_binary_content(tmp_path: Path, content: bytes) -> None:
+    path = tmp_path / "binary.dat"
+    path.write_bytes(content)
     tool = create_read_tool(cwd=tmp_path)
 
-    result = run_async(tool.execute({"path": "image.png"}))
-
-    assert result.content == "Read image file [image/png]"
-    assert result.data is not None
-    assert result.data["mime_type"] == "image/png"
-    assert result.data["image_base64"] == base64.b64encode(payload).decode("ascii")
+    with pytest.raises(ToolInputError, match="not valid UTF-8 text"):
+        run_async(tool.execute({"path": "binary.dat"}))
 
 
-def test_read_accepts_absolute_paths_and_treats_unsupported_images_as_text(tmp_path: Path) -> None:
-    path = tmp_path / "image.bmp"
+def test_read_accepts_absolute_text_paths(tmp_path: Path) -> None:
+    path = tmp_path / "notes.txt"
     path.write_text("ordinary text", encoding="utf-8")
     tool = create_read_tool(cwd=tmp_path / "other")
 
     result = run_async(tool.execute({"path": str(path)}))
 
-    assert result.content == "ordinary text"
+    assert result.content == "     1  ordinary text"

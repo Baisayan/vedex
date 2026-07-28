@@ -20,7 +20,8 @@ def create_write_tool_definition(*, cwd: str | Path | None = None) -> ToolDefini
 
         async with _file_lock(path):
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content, encoding="utf-8")
+            with path.open("w", encoding="utf-8", newline="") as file:
+                file.write(content)
 
         return AgentToolResult(
             tool_call_id="",

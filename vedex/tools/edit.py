@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import difflib
 import json
 from collections.abc import Mapping
 from pathlib import Path
@@ -34,27 +33,16 @@ def create_edit_tool_definition(*, cwd: str | Path | None = None) -> ToolDefinit
             bom, content = _strip_bom(raw_content)
             original_ending = detect_line_ending(content)
             normalized = normalize_to_lf(content)
-            base_content, new_content = apply_edits_to_normalized_content(
-                normalized, edits, str(path)
-            )
+            new_content = apply_edits_to_normalized_content(normalized, edits, str(path))
             final_content = bom + restore_line_endings(new_content, original_ending)
             with path.open("w", encoding="utf-8", newline="") as file:
                 file.write(final_content)
 
-        diff_text, first_changed_line = generate_diff_string(base_content, new_content)
-        patch = generate_unified_patch(str(path), base_content, new_content)
         return AgentToolResult(
             tool_call_id="",
             name="edit",
             ok=True,
-            content=f"Successfully replaced {len(edits)} block(s) in {path}.",
-            data={
-                "path": str(path),
-                "edits": len(edits),
-                "diff": diff_text,
-                "patch": patch,
-                "first_changed_line": first_changed_line,
-            },
+            content=f"Edited {path}: {len(edits)} replacement(s).",
         )
 
     return ToolDefinition(
@@ -128,7 +116,7 @@ def apply_edits_to_normalized_content(
     normalized_content: str,
     edits: list[dict[str, str]],
     path: str,
-) -> tuple[str, str]:
+) -> str:
     normalized_edits = [
         {"oldText": normalize_to_lf(edit["oldText"]), "newText": normalize_to_lf(edit["newText"])}
         for edit in edits
@@ -154,36 +142,7 @@ def apply_edits_to_normalized_content(
         new_content = f"{new_content[:start]}{new_text}{new_content[end:]}"
     if new_content == normalized_content:
         raise ToolInputError(_no_change_error(path, len(normalized_edits)))
-    return normalized_content, new_content
-
-
-def generate_diff_string(old: str, new: str) -> tuple[str, int | None]:
-    old_lines = old.splitlines()
-    new_lines = new.splitlines()
-    diff = "\n".join(difflib.ndiff(old_lines, new_lines))
-    first_changed_line: int | None = None
-    new_line_number = 0
-    for line in difflib.ndiff(old_lines, new_lines):
-        if line.startswith("  "):
-            new_line_number += 1
-        elif line.startswith("+"):
-            new_line_number += 1
-            if first_changed_line is None:
-                first_changed_line = new_line_number
-        elif line.startswith("-") and first_changed_line is None:
-            first_changed_line = max(new_line_number + 1, 1)
-    return diff, first_changed_line
-
-
-def generate_unified_patch(path: str, old: str, new: str) -> str:
-    return "".join(
-        difflib.unified_diff(
-            old.splitlines(keepends=True),
-            new.splitlines(keepends=True),
-            fromfile=path,
-            tofile=path,
-        )
-    )
+    return new_content
 
 
 def _prepare_edit_arguments(arguments: Mapping[str, JSONValue]) -> Mapping[str, JSONValue]:

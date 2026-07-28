@@ -209,11 +209,16 @@ def _load_markdown_resources(
             files = [item for item in sorted(directory.glob("*.md")) if item.is_file()]
 
         for path in files:
-            name = path.stem
-            if name in seen_names:
+            name = (
+                path.parent.name
+                if include_subdirs and path.name.upper() == "SKILL.MD" and path.parent != directory
+                else path.stem
+            )
+            normalized_name = name.casefold()
+            if normalized_name in seen_names:
                 _warn_optional_resource(f"duplicate {resource_kind} '{name}' ignored: {path}")
                 continue
-            seen_names.add(name)
+            seen_names.add(normalized_name)
             try:
                 metadata, content = parse_markdown_resource(path.read_text(encoding="utf-8"))
             except (OSError, UnicodeDecodeError) as exc:

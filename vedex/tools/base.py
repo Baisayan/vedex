@@ -63,7 +63,6 @@ _file_locks: dict[Path, asyncio.Lock] = {}
 def create_coding_tools(
     *,
     cwd: str | Path | None = None,
-    shell_command_prefix: str | None = None,
 ) -> list[AgentTool]:
     from .bash import create_bash_tool
     from .edit import create_edit_tool
@@ -75,7 +74,7 @@ def create_coding_tools(
         create_read_tool(cwd=root),
         create_write_tool(cwd=root),
         create_edit_tool(cwd=root),
-        create_bash_tool(cwd=root, shell_command_prefix=shell_command_prefix),
+        create_bash_tool(cwd=root),
     ]
 
 
@@ -243,15 +242,6 @@ def _optional_int_arg(arguments: Mapping[str, JSONValue], name: str) -> int | No
     if not isinstance(value, int):
         raise ToolInputError(f"{name} must be an integer")
     return value
-
-
-def _optional_float_arg(arguments: Mapping[str, JSONValue], name: str) -> float | None:
-    value = arguments.get(name)
-    if value is None:
-        return None
-    if not isinstance(value, int | float):
-        raise ToolInputError(f"{name} must be a number")
-    return float(value)
 
 
 class _FileLockContext:

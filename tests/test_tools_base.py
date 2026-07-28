@@ -9,7 +9,6 @@ from vedex.tools.base import (
     ToolDefinition,
     ToolInputError,
     _file_lock,
-    _optional_float_arg,
     _optional_int_arg,
     _path_arg,
     _str_arg,
@@ -67,13 +66,11 @@ def test_status_and_head_tail_truncation_cover_lines_bytes_and_large_single_line
 def test_tool_argument_helpers_validate_types_and_resolve_paths(tmp_path: Path) -> None:
     assert _str_arg({"name": "value"}, "name") == "value"
     assert _optional_int_arg({"value": 2}, "value") == 2
-    assert _optional_float_arg({"value": 2}, "value") == 2.0
     assert _path_arg({"path": "child.txt"}, "path", cwd=tmp_path) == tmp_path / "child.txt"
 
     for callback in (
         lambda: _str_arg({}, "name"),
         lambda: _optional_int_arg({"value": "two"}, "value"),
-        lambda: _optional_float_arg({"value": "two"}, "value"),
     ):
         with pytest.raises(ToolInputError):
             callback()

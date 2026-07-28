@@ -153,7 +153,7 @@ def _parse_object(line: str) -> dict[str, Any] | None:
     return value
 
 
-# Wire types (Ollama protocol)
+# Ollama protocol
 
 
 @dataclass(frozen=True, slots=True)

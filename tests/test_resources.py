@@ -68,7 +68,7 @@ def test_skill_and_prompt_loading_handles_directories_duplicates_and_warnings(
     prompts = load_prompt_templates(paths)
 
     assert [(skill.name, skill.description) for skill in skills] == [
-        ("SKILL", "Nested skill"),
+        ("nested", "Nested skill"),
         ("single", "One"),
     ]
     assert [template.name for template in prompts] == ["review"]

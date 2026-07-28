@@ -12,35 +12,22 @@ from .base import (
     truncate_head,
     truncate_tail,
 )
-from .bash import (
-    ShellConfigError,
-    ShellSettings,
-    create_bash_tool,
-    create_bash_tool_definition,
-    load_shell_settings,
-    shell_settings_from_json,
-    shell_settings_path,
-)
+from .bash import create_bash_tool, create_bash_tool_definition
 from .edit import (
     UTF8_BOM,
     apply_edits_to_normalized_content,
     create_edit_tool,
     create_edit_tool_definition,
     detect_line_ending,
-    generate_diff_string,
-    generate_unified_patch,
     normalize_to_lf,
     restore_line_endings,
 )
-from .read import SUPPORTED_IMAGE_MIME_TYPES, create_read_tool, create_read_tool_definition
+from .read import create_read_tool, create_read_tool_definition
 from .write import create_write_tool, create_write_tool_definition
 
 __all__ = [
     "DEFAULT_MAX_OUTPUT_BYTES",
     "DEFAULT_MAX_OUTPUT_LINES",
-    "ShellConfigError",
-    "ShellSettings",
-    "SUPPORTED_IMAGE_MIME_TYPES",
     "ToolDefinition",
     "ToolInputError",
     "TruncationResult",
@@ -58,13 +45,8 @@ __all__ = [
     "create_write_tool_definition",
     "detect_line_ending",
     "format_size",
-    "generate_diff_string",
-    "generate_unified_patch",
-    "load_shell_settings",
     "normalize_to_lf",
     "restore_line_endings",
-    "shell_settings_from_json",
-    "shell_settings_path",
     "truncate_head",
     "truncate_tail",
 ]
