@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "vedex"
 version = "0.1.0"
-description = "An AI coding agent"
+description = "A cli-based local ollama-native AI coding agent"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -16,6 +16,11 @@ dependencies = [
     "rich>=15.0.0",
     "typer>=0.27.0",
 ]
+
+[project.urls]
+Documentation = "https://twotimespi.dev"
+Repository = "https://github.com/Baisayan/vedex"
+Issues = "https://github.com/Baisayan/vedex/issues"
 
 [project.scripts]
 vedex = "vedex.cli:app"
