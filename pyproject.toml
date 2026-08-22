@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "vedex"
 version = "0.1.0"
-description = "A cli-based local ollama-native AI coding agent"
+description = "A minimal, provider-neutral terminal coding-agent harness"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
