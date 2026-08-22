@@ -18,15 +18,20 @@ only in memory and disappears when the process exits.
 - `Environment` and `LocalEnvironment` contracts for byte-based file access,
   foreground commands, patch collection, workspace export, and reproducibility
   metadata.
-- Environment-bound `read`, `write`, `edit`, and `bash` tools.
+- Environment-bound `read`, `write`, `edit`, and `bash` tools whose published
+  schemas are their only accepted input contracts.
 - `AppRuntime` for environment lifecycle, project resources, system-prompt
-  construction, and Agent composition.
+  construction, and the package's only Agent composition point.
 - A Rich interactive REPL with streamed Agent events, cancellable turns,
   project resources, and focused context/reload/reset commands.
 - `run_headless()` with plain-text or JSONL event streaming, typed `RunResult`
   values, stable exit codes, and stderr-only diagnostics.
 - Versioned JSON run artifacts containing configuration, hashes, messages,
   normalized events, usage, timing, status, and a patch or workspace export.
+
+The base package has no provider client or model-discovery path and no durable
+conversation store. Adapters normalize provider events and failures before the
+Agent sees them; filesystem and process mechanics remain inside environments.
 
 Docker execution, built-in production model adapters, and benchmark runners are
 not implemented yet. No benchmark score is claimed.

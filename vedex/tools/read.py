@@ -7,20 +7,21 @@ from ..schema import AgentTool, AgentToolResult, CancellationToken, JSONValue
 from .base import (
     DEFAULT_MAX_OUTPUT_BYTES,
     DEFAULT_MAX_OUTPUT_LINES,
-    ToolDefinition,
     ToolInputError,
     _optional_int_arg,
+    _reject_unknown_args,
     _workspace_path_arg,
     format_size,
     truncate_head,
 )
 
 
-def create_read_tool_definition(*, environment: Environment) -> ToolDefinition:
+def create_read_tool(*, environment: Environment) -> AgentTool:
     async def execute(
         arguments: Mapping[str, JSONValue],
         signal: CancellationToken | None = None,
     ) -> AgentToolResult:
+        _reject_unknown_args(arguments, {"path", "offset", "limit"})
         path = _workspace_path_arg(arguments, "path", environment=environment)
         offset = _optional_int_arg(arguments, "offset")
         limit = _optional_int_arg(arguments, "limit")
@@ -111,7 +112,7 @@ def create_read_tool_definition(*, environment: Environment) -> ToolDefinition:
             content=output,
         )
 
-    return ToolDefinition(
+    return AgentTool(
         name="read",
         description=(
             "Read the contents of a UTF-8 text file. Output is truncated to "
@@ -119,8 +120,6 @@ def create_read_tool_definition(*, environment: Environment) -> ToolDefinition:
             "(whichever is hit first). Use offset/limit for large files. When you need the "
             "full file, continue with offset until complete. Paths must be workspace-relative."
         ),
-        prompt_snippet="Read file contents",
-        prompt_guidelines=("Use read to examine files instead of cat or sed.",),
         input_schema={
             "type": "object",
             "properties": {
@@ -143,8 +142,6 @@ def create_read_tool_definition(*, environment: Environment) -> ToolDefinition:
             "additionalProperties": False,
         },
         executor=execute,
+        prompt_snippet="Read file contents",
+        prompt_guidelines=("Use read to examine files instead of cat or sed.",),
     )
-
-
-def create_read_tool(*, environment: Environment) -> AgentTool:
-    return create_read_tool_definition(environment=environment).to_agent_tool()

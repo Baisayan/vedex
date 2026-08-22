@@ -42,7 +42,7 @@ def test_edit_applies_disjoint_original_matches(
     assert result.content == "Edited file.txt: 2 replacement(s)."
 
 
-def test_edit_accepts_json_and_legacy_edit_arguments_and_preserves_bom_crlf(
+def test_edit_preserves_bom_and_crlf(
     tmp_path: Path,
     local_environment: LocalEnvironment,
 ) -> None:
@@ -54,9 +54,10 @@ def test_edit_accepts_json_and_legacy_edit_arguments_and_preserves_bom_crlf(
         tool.execute(
             {
                 "path": "file.txt",
-                "edits": '[{"oldText": "old", "newText": "new"}]',
-                "oldText": "keep",
-                "newText": "stays changed",
+                "edits": [
+                    {"oldText": "old", "newText": "new"},
+                    {"oldText": "keep", "newText": "stays changed"},
+                ],
             }
         )
     )
@@ -72,6 +73,12 @@ def test_edit_accepts_json_and_legacy_edit_arguments_and_preserves_bom_crlf(
         {"path": "file.txt", "edits": [{"oldText": "", "newText": "b"}]},
         {"path": "file.txt", "edits": [{"oldText": "missing", "newText": "b"}]},
         {"path": "file.txt", "edits": [{"oldText": "same", "newText": "same"}]},
+        {"path": "file.txt", "edits": '[{"oldText": "same", "newText": "new"}]'},
+        {"path": "file.txt", "oldText": "same", "newText": "new"},
+        {
+            "path": "file.txt",
+            "edits": [{"oldText": "same", "newText": "new", "unexpected": True}],
+        },
     ],
 )
 def test_edit_rejects_invalid_or_unapplicable_edits(

@@ -4,11 +4,7 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 
 from ..environments import Environment, WorkspacePathError
-from ..schema import (
-    AgentTool,
-    JSONValue,
-    ToolExecutor,
-)
+from ..schema import AgentTool, JSONValue
 
 DEFAULT_MAX_OUTPUT_BYTES = 50 * 1024
 DEFAULT_MAX_OUTPUT_LINES = 2_000
@@ -34,26 +30,6 @@ class TruncationResult:
 
     def to_json(self) -> dict[str, JSONValue]:
         return asdict(self)
-
-
-@dataclass(frozen=True, slots=True)
-class ToolDefinition:
-    name: str
-    description: str
-    prompt_snippet: str
-    prompt_guidelines: tuple[str, ...]
-    input_schema: Mapping[str, JSONValue]
-    executor: ToolExecutor
-
-    def to_agent_tool(self) -> AgentTool:
-        return AgentTool(
-            name=self.name,
-            description=self.description,
-            input_schema=self.input_schema,
-            executor=self.executor,
-            prompt_snippet=self.prompt_snippet,
-            prompt_guidelines=self.prompt_guidelines,
-        )
 
 
 def create_coding_tools(
@@ -225,6 +201,13 @@ def _str_arg(arguments: Mapping[str, JSONValue], name: str) -> str:
     return value
 
 
+def _reject_unknown_args(arguments: Mapping[str, JSONValue], allowed: set[str]) -> None:
+    unknown = sorted(set(arguments) - allowed)
+    if unknown:
+        joined = ", ".join(unknown)
+        raise ToolInputError(f"Unexpected argument(s): {joined}")
+
+
 def _workspace_path_arg(
     arguments: Mapping[str, JSONValue],
     name: str,
@@ -242,6 +225,6 @@ def _optional_int_arg(arguments: Mapping[str, JSONValue], name: str) -> int | No
     value = arguments.get(name)
     if value is None:
         return None
-    if not isinstance(value, int):
+    if isinstance(value, bool) or not isinstance(value, int):
         raise ToolInputError(f"{name} must be an integer")
     return value

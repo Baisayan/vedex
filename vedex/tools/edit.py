@@ -1,23 +1,22 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 
 from ..environments import Environment, EnvironmentFileError, WorkspacePathError
 from ..schema import AgentTool, AgentToolResult, CancellationToken, JSONValue
-from .base import ToolDefinition, ToolInputError, _workspace_path_arg
+from .base import ToolInputError, _reject_unknown_args, _workspace_path_arg
 
 UTF8_BOM = "\ufeff"
 
 
-def create_edit_tool_definition(*, environment: Environment) -> ToolDefinition:
+def create_edit_tool(*, environment: Environment) -> AgentTool:
     async def execute(
         arguments: Mapping[str, JSONValue],
         signal: CancellationToken | None = None,
     ) -> AgentToolResult:
-        prepared = _prepare_edit_arguments(arguments)
-        path = _workspace_path_arg(prepared, "path", environment=environment)
-        edits = _edits_arg(prepared)
+        _reject_unknown_args(arguments, {"path", "edits"})
+        path = _workspace_path_arg(arguments, "path", environment=environment)
+        edits = _edits_arg(arguments)
 
         try:
             raw_bytes = await environment.read_bytes(path, signal=signal)
@@ -60,7 +59,7 @@ def create_edit_tool_definition(*, environment: Environment) -> ToolDefinition:
             content=f"Edited {path}: {len(edits)} replacement(s).",
         )
 
-    return ToolDefinition(
+    return AgentTool(
         name="edit",
         description=(
             "Edit a single file using exact text replacement. Every edits[].oldText must match "
@@ -68,20 +67,6 @@ def create_edit_tool_definition(*, environment: Environment) -> ToolDefinition:
             "same block or nearby lines, merge them into one edit instead of emitting overlapping "
             "edits. Do not include large unchanged regions just to connect distant changes. "
             "Paths must be workspace-relative."
-        ),
-        prompt_snippet=(
-            "Make precise file edits with exact text replacement, including multiple disjoint "
-            "edits in one call"
-        ),
-        prompt_guidelines=(
-            "Use edit for precise changes (edits[].oldText must match exactly)",
-            "When changing multiple separate locations in one file, use one edit call with "
-            "multiple entries in edits[] instead of multiple edit calls",
-            "Each edits[].oldText is matched against the original file, not after earlier "
-            "edits are applied. Do not emit overlapping or nested edits. Merge nearby "
-            "changes into one edit.",
-            "Keep edits[].oldText as small as possible while still being unique in the file. "
-            "Do not pad with large unchanged regions.",
         ),
         input_schema={
             "type": "object",
@@ -105,11 +90,21 @@ def create_edit_tool_definition(*, environment: Environment) -> ToolDefinition:
             "additionalProperties": False,
         },
         executor=execute,
+        prompt_snippet=(
+            "Make precise file edits with exact text replacement, including multiple disjoint "
+            "edits in one call"
+        ),
+        prompt_guidelines=(
+            "Use edit for precise changes (edits[].oldText must match exactly)",
+            "When changing multiple separate locations in one file, use one edit call with "
+            "multiple entries in edits[] instead of multiple edit calls",
+            "Each edits[].oldText is matched against the original file, not after earlier "
+            "edits are applied. Do not emit overlapping or nested edits. Merge nearby "
+            "changes into one edit.",
+            "Keep edits[].oldText as small as possible while still being unique in the file. "
+            "Do not pad with large unchanged regions.",
+        ),
     )
-
-
-def create_edit_tool(*, environment: Environment) -> AgentTool:
-    return create_edit_tool_definition(environment=environment).to_agent_tool()
 
 
 def detect_line_ending(content: str) -> str:
@@ -161,28 +156,6 @@ def apply_edits_to_normalized_content(
     return new_content
 
 
-def _prepare_edit_arguments(arguments: Mapping[str, JSONValue]) -> Mapping[str, JSONValue]:
-    prepared = dict(arguments)
-    edits_value = prepared.get("edits")
-    if isinstance(edits_value, str):
-        try:
-            parsed = json.loads(edits_value)
-        except json.JSONDecodeError:
-            parsed = None
-        if isinstance(parsed, list):
-            prepared["edits"] = parsed
-
-    old_text = prepared.get("oldText")
-    new_text = prepared.get("newText")
-    if isinstance(old_text, str) and isinstance(new_text, str):
-        edits = prepared.get("edits")
-        edit_list = edits if isinstance(edits, list) else []
-        prepared["edits"] = [*edit_list, {"oldText": old_text, "newText": new_text}]
-        prepared.pop("oldText", None)
-        prepared.pop("newText", None)
-    return prepared
-
-
 def _edits_arg(arguments: Mapping[str, JSONValue]) -> list[dict[str, str]]:
     value = arguments.get("edits")
     if not isinstance(value, list) or not value:
@@ -194,6 +167,10 @@ def _edits_arg(arguments: Mapping[str, JSONValue]) -> list[dict[str, str]]:
     for index, item in enumerate(value):
         if not isinstance(item, dict):
             raise ToolInputError(f"edits[{index}] must be an object")
+        try:
+            _reject_unknown_args(item, {"oldText", "newText"})
+        except ToolInputError as exc:
+            raise ToolInputError(f"edits[{index}] contains invalid fields: {exc}") from exc
         old_text = item.get("oldText")
         new_text = item.get("newText")
         if not isinstance(old_text, str) or not isinstance(new_text, str):

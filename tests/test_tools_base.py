@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 from vedex.environments import LocalEnvironment
+from vedex.schema import AgentTool, JSONValue
 from vedex.tools import create_coding_tools
 from vedex.tools.base import (
-    ToolDefinition,
     ToolInputError,
     _optional_int_arg,
     _str_arg,
@@ -15,24 +15,32 @@ from vedex.tools.base import (
     truncate_tail,
 )
 
-from .conftest import make_tool
+from .conftest import run_async
 
 
 def test_public_tools_package_and_factory_expose_the_four_coding_tools(
     local_environment: LocalEnvironment,
 ) -> None:
     tools = create_coding_tools(environment=local_environment)
-    definition = ToolDefinition(
-        name="check",
-        description="Check.",
-        prompt_snippet="Check things",
-        prompt_guidelines=("Check first",),
-        input_schema={"type": "object"},
-        executor=make_tool().executor,
-    )
 
     assert [tool.name for tool in tools] == ["read", "write", "edit", "bash"]
-    assert definition.to_agent_tool().prompt_guidelines == ("Check first",)
+    assert all(isinstance(tool, AgentTool) for tool in tools)
+
+
+def test_coding_tools_reject_arguments_outside_their_published_schemas(
+    local_environment: LocalEnvironment,
+) -> None:
+    tools = {tool.name: tool for tool in create_coding_tools(environment=local_environment)}
+    arguments: dict[str, dict[str, JSONValue]] = {
+        "read": {"path": "file.txt", "unexpected": True},
+        "write": {"path": "file.txt", "content": "text", "unexpected": True},
+        "edit": {"path": "file.txt", "edits": [], "unexpected": True},
+        "bash": {"command": "echo test", "unexpected": True},
+    }
+
+    for name, tool_arguments in arguments.items():
+        with pytest.raises(ToolInputError, match="Unexpected argument"):
+            run_async(tools[name].execute(tool_arguments))
 
 
 @pytest.mark.parametrize(
@@ -79,6 +87,7 @@ def test_tool_argument_helpers_validate_types_and_resolve_paths(
     for callback in (
         lambda: _str_arg({}, "name"),
         lambda: _optional_int_arg({"value": "two"}, "value"),
+        lambda: _optional_int_arg({"value": True}, "value"),
     ):
         with pytest.raises(ToolInputError):
             callback()

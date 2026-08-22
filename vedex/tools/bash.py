@@ -7,9 +7,9 @@ from ..schema import AgentTool, AgentToolResult, CancellationToken, JSONValue
 from .base import (
     DEFAULT_MAX_OUTPUT_BYTES,
     DEFAULT_MAX_OUTPUT_LINES,
-    ToolDefinition,
     ToolInputError,
     _optional_int_arg,
+    _reject_unknown_args,
     _str_arg,
     append_status_block,
     format_size,
@@ -20,14 +20,15 @@ DEFAULT_TIMEOUT_SECONDS = 120
 MAX_TIMEOUT_SECONDS = 600
 
 
-def create_bash_tool_definition(
+def create_bash_tool(
     *,
     environment: Environment,
-) -> ToolDefinition:
+) -> AgentTool:
     async def execute(
         arguments: Mapping[str, JSONValue],
         signal: CancellationToken | None = None,
     ) -> AgentToolResult:
+        _reject_unknown_args(arguments, {"command", "timeout"})
         command = _str_arg(arguments, "command")
         timeout = _optional_int_arg(arguments, "timeout")
         if timeout is None:
@@ -81,7 +82,7 @@ def create_bash_tool_definition(
             },
         )
 
-    return ToolDefinition(
+    return AgentTool(
         name="bash",
         description=(
             "Execute a shell command in the workspace root. Returns stdout and stderr. "
@@ -90,8 +91,6 @@ def create_bash_tool_definition(
             f"after {DEFAULT_TIMEOUT_SECONDS} seconds by default; the maximum is "
             f"{MAX_TIMEOUT_SECONDS} seconds."
         ),
-        prompt_snippet="Execute shell commands (ls, grep, find, etc.)",
-        prompt_guidelines=(),
         input_schema={
             "type": "object",
             "properties": {
@@ -107,11 +106,6 @@ def create_bash_tool_definition(
             "required": ["command"],
         },
         executor=execute,
+        prompt_snippet="Execute shell commands (ls, grep, find, etc.)",
+        prompt_guidelines=(),
     )
-
-
-def create_bash_tool(
-    *,
-    environment: Environment,
-) -> AgentTool:
-    return create_bash_tool_definition(environment=environment).to_agent_tool()
