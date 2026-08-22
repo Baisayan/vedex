@@ -5,10 +5,9 @@ runtime combines a typed model adapter, an in-memory Agent, environment-bound
 coding tools, project instructions and skills, deterministic headless output,
 and versioned run artifacts.
 
-The implementation is being migrated in deliberate milestones. The new
-headless path is the canonical path for future benchmark runners. The existing
-interactive REPL is still on the legacy runtime and will be moved onto the same
-`AppRuntime` in a later milestone.
+Interactive and headless execution now share the same ephemeral `AppRuntime`,
+Agent, resources, tools, and environment lifecycle. Conversation history lives
+only in memory and disappears when the process exits.
 
 ## Implemented runtime
 
@@ -22,13 +21,46 @@ interactive REPL is still on the legacy runtime and will be moved onto the same
 - Environment-bound `read`, `write`, `edit`, and `bash` tools.
 - `AppRuntime` for environment lifecycle, project resources, system-prompt
   construction, and Agent composition.
+- A Rich interactive REPL with streamed Agent events, cancellable turns,
+  project resources, and focused context/reload/reset commands.
 - `run_headless()` with plain-text or JSONL event streaming, typed `RunResult`
   values, stable exit codes, and stderr-only diagnostics.
 - Versioned JSON run artifacts containing configuration, hashes, messages,
   normalized events, usage, timing, status, and a patch or workspace export.
 
-Docker execution, production model adapters, benchmark runners, and migration
-of the interactive REPL are not implemented yet. No benchmark score is claimed.
+Docker execution, built-in production model adapters, and benchmark runners are
+not implemented yet. No benchmark score is claimed.
+
+## Interactive REPL
+
+The CLI chooses an adapter and model once at startup. An adapter entry point is
+a zero-argument factory using the `module:attribute` form; it returns an object
+implementing `ModelAdapter`. This keeps provider packages and credentials out of
+the REPL itself.
+
+```bash
+vedex --adapter your_package.adapters:create_adapter --model model-id --cwd .
+```
+
+Vedex currently ships only `FakeAdapter` for deterministic offline tests. A
+production adapter can be supplied externally through the same contract until
+built-in provider support is added.
+
+The interactive command set is intentionally small:
+
+- `/help`, `/skills`, `/prompts`, and `/context` inspect runtime state.
+- `/skill:<name> [request]` injects that skill's complete instructions.
+- `/<prompt> [arguments]` expands a loaded prompt template before the user
+  message is appended.
+- `/reload` reloads resources without changing history; `/reset` clears only
+  in-memory messages.
+- `/clear`, `/exit`, and `!command` provide terminal controls. Direct shell
+  output is not added to model history.
+
+Skills use `skills/<name>/SKILL.md` under `~/.vedex` or the project's `.vedex`
+directory. Only their names and descriptions appear in the base system prompt.
+Project `AGENTS.md` instructions are loaded deterministically from repository
+root toward the active directory.
 
 ## Headless API
 

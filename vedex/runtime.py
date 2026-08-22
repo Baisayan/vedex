@@ -9,7 +9,7 @@ from .environments import Environment
 from .models import ModelAdapter, ModelSettings
 from .resources import ProjectContextFile, ResourcePaths
 from .schema import AgentEvent
-from .workspace import Workspace
+from .workspace import ReloadSummary, Workspace
 
 type AppRuntimeState = Literal["created", "starting", "started", "closing", "closed"]
 
@@ -153,6 +153,15 @@ class AppRuntime:
 
     def reset(self) -> None:
         self.agent.reset()
+
+    def reload_resources(self) -> ReloadSummary:
+        """Reload workspace resources while preserving in-memory conversation history."""
+        if self.agent.is_running:
+            raise RuntimeError("Cannot reload resources while an Agent is running")
+        summary = self.workspace.reload()
+        if summary.system_prompt_rebuilt:
+            self.agent.set_system_prompt(self.workspace.system_prompt)
+        return summary
 
     async def prompt(self, task: str) -> AsyncGenerator[AgentEvent, None]:
         if self._state != "started":

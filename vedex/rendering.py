@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import sys
 from typing import Any
 
-import typer
 from rich.console import Console
 from rich.text import Text
 
@@ -13,6 +13,7 @@ from .schema import (
     MessageDeltaEvent,
     MessageEndEvent,
     MessageStartEvent,
+    ThinkingDeltaEvent,
     ToolCall,
     ToolExecutionEndEvent,
     ToolExecutionStartEvent,
@@ -23,62 +24,100 @@ TOOL_RESULT_PREVIEW_CHARS = 1_500
 
 
 class CommandLineRenderer:
+    """Render normalized Agent events without knowing model-provider formats."""
+
     def __init__(self) -> None:
         self._assistant_started = False
         self._assistant_ended = False
+        self._thinking_started = False
+        self._thinking_ended = False
         self._failed = False
-        self._console = Console(stderr=True, highlight=False)
+        self._output = Console(file=sys.stdout, highlight=False)
+        self._diagnostics = Console(file=sys.stderr, highlight=False)
 
     def render(self, event: AgentEvent) -> None:
         if isinstance(event, MessageStartEvent):
-            self._assistant_started = False
-            self._assistant_ended = False
+            if event.message_role == "assistant":
+                self._assistant_started = False
+                self._assistant_ended = False
+                self._thinking_started = False
+                self._thinking_ended = False
             return
 
         if isinstance(event, MessageDeltaEvent):
+            self._ensure_thinking_newline()
             self._assistant_started = True
-            typer.echo(event.delta, nl=False)
+            self._output.print(Text(event.delta), end="", soft_wrap=True)
+            return
+
+        if isinstance(event, ThinkingDeltaEvent):
+            if not self._thinking_started:
+                self._diagnostics.print(Text("thinking: ", style="dim"), end="")
+                self._thinking_started = True
+            self._diagnostics.print(Text(event.delta, style="dim"), end="", soft_wrap=True)
             return
 
         if isinstance(event, ToolExecutionStartEvent):
+            self._ensure_thinking_newline()
             self._ensure_assistant_newline()
-            self._console.print(Text(format_tool_call_block(event.tool_call), style="cyan"))
+            self._diagnostics.print(Text(format_tool_call_block(event.tool_call), style="cyan"))
             return
 
         if isinstance(event, ToolExecutionEndEvent):
+            self._ensure_thinking_newline()
             self._ensure_assistant_newline()
             status = "✓" if event.result.ok else "✗"
             style = "green" if event.result.ok else "red"
 
             line = Text()
             line.append(f"{status} completed: {event.result.name}", style=style)
-            self._console.print(line)
+            self._diagnostics.print(line)
 
             if event.result.content:
                 preview = _preview_text(event.result.content, max_lines=TOOL_RESULT_PREVIEW_LINES)
-                for i in preview.splitlines():
-                    self._console.print(Text(f"  {i}", style="white"))
+                for line_text in preview.splitlines():
+                    self._diagnostics.print(Text(f"  {line_text}", style="white"))
             return
 
         if isinstance(event, ErrorEvent):
             if not event.recoverable:
                 self._failed = True
+            self._ensure_thinking_newline()
             self._ensure_assistant_newline()
-            self._console.print(Text(f"Error: {event.message}", style="red"))
+            self._diagnostics.print(Text(f"Error: {event.message}", style="red"))
             return
 
-        if isinstance(event, MessageEndEvent | AgentEndEvent):
+        if isinstance(event, MessageEndEvent):
+            if event.message.role == "assistant":
+                self._ensure_thinking_newline(final=True)
+                if not self._assistant_started and event.message.content:
+                    self._assistant_started = True
+                    self._output.print(Text(event.message.content), end="", soft_wrap=True)
+                self._ensure_assistant_newline(final=True)
+            return
+
+        if isinstance(event, AgentEndEvent):
+            self._ensure_thinking_newline(final=True)
             self._ensure_assistant_newline(final=True)
 
     def finish(self) -> bool:
+        self._ensure_thinking_newline(final=True)
+        self._ensure_assistant_newline(final=True)
         return not self._failed
 
     def _ensure_assistant_newline(self, *, final: bool = False) -> None:
         if self._assistant_started and not self._assistant_ended:
-            typer.echo()
+            self._output.print()
             self._assistant_ended = True
         elif final and not self._assistant_started:
             self._assistant_ended = True
+
+    def _ensure_thinking_newline(self, *, final: bool = False) -> None:
+        if self._thinking_started and not self._thinking_ended:
+            self._diagnostics.print()
+            self._thinking_ended = True
+        elif final and not self._thinking_started:
+            self._thinking_ended = True
 
 
 def format_tool_call_block(tool_call: ToolCall) -> str:

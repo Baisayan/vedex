@@ -102,6 +102,49 @@ def test_app_runtime_rejects_prompt_before_start_and_is_one_shot(tmp_path: Path)
     run_async(exercise())
 
 
+def test_reload_updates_prompt_without_history_and_reset_only_clears_memory(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "resources"
+    skill_path = root / "skills" / "review" / "SKILL.md"
+    skill_path.parent.mkdir(parents=True)
+    skill_path.write_text("---\ndescription: First\n---\nsecret body", encoding="utf-8")
+    adapter = FakeAdapter([_completed_stream("first"), _completed_stream("second")])
+    runtime = AppRuntime(
+        adapter=adapter,
+        environment=LocalEnvironment(tmp_path),
+        settings=ModelSettings(model="fake"),
+        workspace_path=tmp_path,
+        resource_paths=ResourcePaths(root=root),
+    )
+
+    async def exercise() -> None:
+        async with runtime:
+            _ = [event async for event in runtime.prompt("one")]
+            history = runtime.agent.messages
+            original_prompt = runtime.agent.system_prompt
+            skill_path.write_text(
+                "---\ndescription: Changed\n---\nchanged secret body",
+                encoding="utf-8",
+            )
+
+            summary = runtime.reload_resources()
+
+            assert summary.system_prompt_rebuilt is True
+            assert runtime.agent.messages == history
+            assert runtime.agent.system_prompt == runtime.system_prompt
+            assert runtime.agent.system_prompt != original_prompt
+            _ = [event async for event in runtime.prompt("two")]
+            runtime.reset()
+            assert runtime.agent.messages == ()
+            assert runtime.agent.system_prompt == runtime.system_prompt
+
+    run_async(exercise())
+
+    assert adapter.requests[1].system == runtime.system_prompt
+    assert skill_path.is_file()
+
+
 def test_app_runtime_closes_environment_when_resource_composition_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

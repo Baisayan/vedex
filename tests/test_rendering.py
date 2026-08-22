@@ -5,9 +5,12 @@ from vedex.rendering import CommandLineRenderer, _preview_text, format_tool_call
 from vedex.schema import (
     AgentEndEvent,
     AgentToolResult,
+    AssistantMessage,
     ErrorEvent,
     MessageDeltaEvent,
+    MessageEndEvent,
     MessageStartEvent,
+    ThinkingDeltaEvent,
     ToolCall,
     ToolExecutionEndEvent,
     ToolExecutionStartEvent,
@@ -37,6 +40,7 @@ def test_renderer_streams_messages_tools_and_errors(
 ) -> None:
     renderer = CommandLineRenderer()
     renderer.render(MessageStartEvent())
+    renderer.render(ThinkingDeltaEvent(delta="Checking"))
     renderer.render(MessageDeltaEvent(delta="Hello"))
     renderer.render(
         ToolExecutionStartEvent(tool_call=ToolCall(id="1", name="read", arguments={"path": "file"}))
@@ -54,7 +58,19 @@ def test_renderer_streams_messages_tools_and_errors(
 
     captured = capsys.readouterr()
     assert "Hello" in captured.out
+    assert "thinking: Checking" in captured.err
     assert "completed: read" in captured.err
     assert "Error: recoverable" in captured.err
     assert "Error: fatal" in captured.err
     assert renderer.finish() is False
+
+
+def test_renderer_uses_completed_message_when_no_text_deltas_were_streamed(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    renderer = CommandLineRenderer()
+
+    renderer.render(MessageStartEvent())
+    renderer.render(MessageEndEvent(message=AssistantMessage(content="complete only")))
+
+    assert "complete only" in capsys.readouterr().out

@@ -5,7 +5,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import quoteattr
 
 from .environments import normalize_workspace_path
 from .resources import (
@@ -241,12 +241,7 @@ def render_prompt_template(
 
 
 def format_skill_invocation(skill: Skill, additional_instructions: str | None = None) -> str:
-    skill_block = (
-        f'<skill name="{skill.name}" location="{skill.path}">\n'
-        f"References are relative to {skill.path.parent}.\n\n"
-        f"{skill.content.strip()}\n"
-        "</skill>"
-    )
+    skill_block = f"<skill name={quoteattr(skill.name)}>\n{skill.content.strip()}\n</skill>"
     if additional_instructions and additional_instructions.strip():
         return f"{skill_block}\n\n{additional_instructions.strip()}"
     return skill_block
@@ -292,7 +287,7 @@ def format_project_context(context_files: Sequence[ProjectContextFile]) -> str:
         "",
     ]
     for context_file in context_files:
-        lines.append(f'<project_instructions path="{escape(context_file.path)}">')
+        lines.append(f"<project_instructions path={quoteattr(context_file.path)}>")
         lines.append(context_file.content)
         lines.append("</project_instructions>")
         lines.append("")
@@ -305,23 +300,13 @@ def format_skills_for_prompt(skills: Sequence[Skill]) -> str:
         return ""
 
     lines = [
-        "\n\nThe following skills provide specialized instructions for specific tasks.",
-        "Read the full skill file when the task matches its description.",
-        "Use workspace-relative paths in tool commands; skill source locations are resource "
-        "identifiers, not tool paths.",
-        "",
+        "\n\nSkills available through /skill:<name> (full instructions are inserted on use):",
         "<available_skills>",
     ]
     for skill in sorted(skills, key=lambda item: item.name):
         description = skill.description or "No description"
-        lines.extend(
-            [
-                "  <skill>",
-                f"    <name>{escape(skill.name)}</name>",
-                f"    <description>{escape(description)}</description>",
-                f"    <location>{escape(str(skill.path))}</location>",
-                "  </skill>",
-            ]
+        lines.append(
+            f"  <skill name={quoteattr(skill.name)} description={quoteattr(description)} />"
         )
     lines.append("</available_skills>")
     return "\n".join(lines)

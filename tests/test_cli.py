@@ -1,281 +1,258 @@
 from __future__ import annotations
 
-import builtins
-from collections.abc import Iterator
+import asyncio
+from collections.abc import AsyncIterator
 from pathlib import Path
 
-import httpx
 import pytest
 import vedex.cli as cli
 from typer.testing import CliRunner
-from vedex.core import OllamaModelInfo
-from vedex.resources import PromptTemplate, ResourceError, ResourcePaths, Skill, VedexPaths
-from vedex.schema import AgentTool, AgentToolResult, UserMessage
-from vedex.session import Session, SessionStore
-from vedex.workspace import ReloadCategorySummary, ReloadSummary, Workspace
+from vedex.environments import LocalEnvironment
+from vedex.models import (
+    FakeAdapter,
+    ModelCancelledEvent,
+    ModelCompletedEvent,
+    ModelEvent,
+    ModelRequest,
+    ModelSettings,
+    ModelStartEvent,
+    ModelTextDeltaEvent,
+)
+from vedex.resources import ResourcePaths
+from vedex.runtime import AppRuntime
+from vedex.schema import AssistantMessage, CancellationToken, UserMessage
+from vedex.workspace import ReloadCategorySummary, ReloadSummary
 
-from .conftest import make_tool, native_ollama_client, native_tags_response, run_async
+from .conftest import run_async
 
 
-def _patch_session_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> VedexPaths:
-    paths = VedexPaths(home=tmp_path / ".vedex")
-    monkeypatch.setattr(cli, "VedexPaths", lambda: paths)
-    return paths
-
-
-def test_public_cli_help_and_model_lookup() -> None:
-    result = CliRunner().invoke(cli.app, ["--help"])
-    models = [
-        OllamaModelInfo(name="one:latest", context_length=4096, supports_tools=True),
-        OllamaModelInfo(name="two:latest", context_length=None, supports_tools=False),
+def _completed_stream(content: str) -> list[ModelEvent]:
+    return [
+        ModelStartEvent(),
+        ModelTextDeltaEvent(delta=content),
+        ModelCompletedEvent(message=AssistantMessage(content=content)),
     ]
 
-    assert result.exit_code == 0
-    assert "--session" in result.output
-    assert cli._find_model(models, "one").name == "one:latest"  # type: ignore[union-attr]
-    assert cli._find_model(models, "two:latest").name == "two:latest"  # type: ignore[union-attr]
-    assert cli._find_model(models, "missing") is None
+
+def _write(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
 
 
-def test_new_resolve_list_and_preview_session_stores(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    paths = _patch_session_home(monkeypatch, tmp_path)
-    paths.sessions_dir.mkdir(parents=True)
-    (paths.sessions_dir / "aaaaaa.jsonl").write_text(
-        '{"role":"user","content":"first user prompt"}\n', encoding="utf-8"
+class _BlockingThenCompletedAdapter:
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+        self.requests: list[ModelRequest] = []
+        self._call_count = 0
+
+    def stream(
+        self,
+        request: ModelRequest,
+        *,
+        signal: CancellationToken | None = None,
+    ) -> AsyncIterator[ModelEvent]:
+        self.requests.append(request.model_copy(deep=True))
+        self._call_count += 1
+        call_number = self._call_count
+
+        async def events() -> AsyncIterator[ModelEvent]:
+            yield ModelStartEvent()
+            if call_number == 1:
+                self.started.set()
+                while signal is None or not signal.is_cancelled():
+                    await asyncio.sleep(0)
+                yield ModelCancelledEvent()
+                return
+            yield ModelTextDeltaEvent(delta="recovered")
+            yield ModelCompletedEvent(message=AssistantMessage(content="recovered"))
+
+        return events()
+
+
+def test_public_cli_requires_startup_adapter_and_model(tmp_path: Path) -> None:
+    runner = CliRunner()
+    help_result = runner.invoke(cli.app, ["--help"])
+    run_result = runner.invoke(
+        cli.app,
+        [
+            "--adapter",
+            "vedex.models:FakeAdapter",
+            "--model",
+            "fake",
+            "--cwd",
+            str(tmp_path),
+        ],
+        input="/exit\n",
     )
-    (paths.sessions_dir / "bbbbbb.jsonl").write_text("not json\n", encoding="utf-8")
-    (paths.sessions_dir / "ignored-name.jsonl").write_text("", encoding="utf-8")
 
-    choices = cli._list_session_choices()
-    assert {choice.identifier for choice in choices} == {"aaaaaa", "bbbbbb"}
-    assert (
-        next(choice.preview for choice in choices if choice.identifier == "aaaaaa")
-        == "first user prompt"
-    )
-    assert (
-        next(choice.preview for choice in choices if choice.identifier == "bbbbbb")
-        == "(invalid session file)"
-    )
-    assert cli._resolve_session_store("aaaaaa").path.name == "aaaaaa.jsonl"
-    direct_path = tmp_path / "direct.jsonl"
-    direct_path.write_text("", encoding="utf-8")
-    assert cli._resolve_session_store(str(direct_path)).path == direct_path.resolve()
-    with pytest.raises(RuntimeError, match="Unknown session ID"):
-        cli._resolve_session_store("cccccc")
-
-    (paths.sessions_dir / "000000.jsonl").write_text("", encoding="utf-8")
-    generated = iter(["000000", "dddddd"])
-    monkeypatch.setattr("vedex.cli.secrets.token_hex", lambda _size: next(generated))
-    store = cli._new_session_store()
-    assert store.path.name == "dddddd.jsonl"
-    assert store.path.read_text(encoding="utf-8") == ""
+    assert help_result.exit_code == 0
+    assert "--adapter" in help_result.output
+    assert "--model" in help_result.output
+    assert "--session" not in help_result.output
+    assert run_result.exit_code == 0
 
 
-def test_model_selection_and_unavailable_ollama_errors(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    models = [OllamaModelInfo(name="local:latest", context_length=2048, supports_tools=True)]
+def test_adapter_loader_validates_factory_contract() -> None:
+    adapter = cli.load_adapter("vedex.models:FakeAdapter")
 
-    async def list_models() -> list[OllamaModelInfo]:
-        return models
-
-    monkeypatch.setattr(cli, "list_model_info", list_models)
-    assert run_async(cli._select_model("local")).context_length == 2048  # type: ignore[union-attr]
-
-    inputs = iter(["bad", "1"])
-    monkeypatch.setattr(builtins, "input", lambda _prompt="": next(inputs))
-    assert run_async(cli._select_model("")) == models[0]
-
-    async def unavailable() -> list[OllamaModelInfo]:
-        raise httpx.ConnectError("offline")
-
-    monkeypatch.setattr(cli, "list_model_info", unavailable)
-    with pytest.raises(RuntimeError, match="Ollama is unavailable"):
-        run_async(cli._available_models())
+    assert isinstance(adapter, FakeAdapter)
+    with pytest.raises(ValueError, match="module:factory"):
+        cli.load_adapter("invalid")
+    with pytest.raises(ValueError, match="not callable"):
+        cli.load_adapter("vedex.models:__all__")
 
 
-def test_skill_prompt_and_context_selection_helpers(
+def test_repl_uses_shared_runtime_resources_and_ephemeral_history(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    skill = Skill(name="review", path=tmp_path / "review.md", content="body", description="Review")
-    template = PromptTemplate(name="fix", path=tmp_path / "fix.md", content="body")
+    project = tmp_path / "project"
+    resources = tmp_path / "resources"
+    project.mkdir()
+    _write(project / "pyproject.toml", "[project]\nname='fixture'\n")
+    instructions = project / "AGENTS.md"
+    _write(instructions, "Original project instruction")
+    _write(
+        resources / "skills" / "review" / "SKILL.md",
+        "---\ndescription: Review code\n---\nFull review instructions",
+    )
+    _write(
+        resources / "prompts" / "fix.md",
+        "---\ndescription: Fix a target\n---\nFix {{arguments}}",
+    )
+    adapter = FakeAdapter([_completed_stream(f"answer {number}") for number in range(1, 6)])
+    cleared: list[bool] = []
+    commands = iter(
+        [
+            "/help",
+            "/skills",
+            "/prompts",
+            "/context",
+            "/skill:review inspect parser",
+            "/fix parser",
+            "!echo shell-output",
+            "/model other",
+            "/reload",
+            "after reload",
+            "/reset",
+            "after reset",
+            "/clear",
+            "/exit",
+        ]
+    )
 
-    assert cli._select_skill((skill,), "REVIEW") is skill
-    assert cli._select_prompt_template((template,), "fix") is template
-    with pytest.raises(ResourceError):
-        cli._select_skill((skill,), "missing")
+    def read_input(_prompt: str = "") -> str:
+        command = next(commands)
+        if command == "/reload":
+            instructions.write_text("Reloaded project instruction", encoding="utf-8")
+        return command
 
-    inputs: Iterator[str] = iter(["1", "fix"])
-    monkeypatch.setattr(builtins, "input", lambda _prompt="": next(inputs))
-    assert cli._select_skill((skill,), "") is skill
-    assert cli._select_prompt_template((template,), "") is template
-    cli._show_skill(skill)
-    cli._show_prompt_template(template)
-    assert "/skill:review" in capsys.readouterr().out
+    monkeypatch.setattr("builtins.input", read_input)
+    monkeypatch.setattr(cli, "_clear_screen", lambda: cleared.append(True))
+
+    run_async(
+        cli.run_repl(
+            adapter=adapter,
+            settings=ModelSettings(model="fake-model"),
+            workspace_path=project,
+            initial_prompt="first task",
+            resource_paths=ResourcePaths(root=resources),
+        )
+    )
+
+    captured = capsys.readouterr()
+    assert "Available skills:" in captured.out
+    assert "/skill:review — Review code" in captured.out
+    assert "Available prompt templates:" in captured.out
+    assert "Messages in memory:" in captured.out
+    assert "shell-output" in captured.out
+    assert "system prompt updated" in captured.out
+    assert "Conversation memory reset." in captured.out
+    assert "Unknown command: /model" in captured.err
+    assert cleared == [True]
+    assert len(adapter.requests) == 5
+    skill_message = adapter.requests[1].messages[-1]
+    assert isinstance(skill_message, UserMessage)
+    assert "Full review instructions" in skill_message.content
+    assert adapter.requests[2].messages[-1] == UserMessage(content="Fix parser")
+    assert adapter.requests[3].system != adapter.requests[0].system
+    assert "Reloaded project instruction" in adapter.requests[3].system
+    assert len(adapter.requests[3].messages) > 1
+    assert adapter.requests[4].messages == [UserMessage(content="after reset")]
+    assert not (resources / "sessions").exists()
+    assert list(project.rglob("*.jsonl")) == []
 
 
-def test_terminal_modes_persist_only_single_bang_output(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+def test_ctrl_c_cancels_active_turn_and_next_prompt_still_runs(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    client = native_ollama_client(lambda _request: native_tags_response())
-    session = Session(
-        cwd=tmp_path,
-        model="local:latest",
-        system_prompt="system",
-        tools=[],
-        client=client,
-        store=SessionStore(tmp_path / "session.jsonl"),
-        context_window_tokens=4096,
+    adapter = _BlockingThenCompletedAdapter()
+    runtime = AppRuntime(
+        adapter=adapter,
+        environment=LocalEnvironment(tmp_path),
+        settings=ModelSettings(model="fake"),
+        workspace_path=tmp_path,
+        resource_paths=ResourcePaths(root=tmp_path / "resources"),
     )
-    bash = make_tool(
-        name="bash",
-        result=AgentToolResult(tool_call_id="", name="bash", ok=True, content="command output"),
+
+    async def exercise() -> None:
+        async with runtime:
+            active_turn = asyncio.create_task(cli._run_agent_turn(runtime, "cancel me"))
+            await asyncio.wait_for(adapter.started.wait(), timeout=1)
+            active_turn.cancel()
+            await active_turn
+
+            assert runtime.agent.is_running is False
+            cancelled_result = runtime.agent.last_result
+            assert cancelled_result is not None
+            assert cancelled_result.status == "cancelled"
+
+            await cli._run_agent_turn(runtime, "next prompt")
+            completed_result = runtime.agent.last_result
+            assert completed_result is not None
+            assert completed_result.status == "completed"
+
+    run_async(exercise())
+
+    captured = capsys.readouterr()
+    assert "Cancelled." in captured.err
+    assert "recovered" in captured.out
+    assert len(adapter.requests) == 2
+
+
+def test_direct_shell_uses_runtime_tool_without_adding_model_history(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    runtime = AppRuntime(
+        adapter=FakeAdapter(),
+        environment=LocalEnvironment(tmp_path),
+        settings=ModelSettings(model="fake"),
+        workspace_path=tmp_path,
+        resource_paths=ResourcePaths(root=tmp_path / "resources"),
     )
-    try:
-        run_async(cli._run_terminal_command(command="echo one", tools=[bash], session=session))
-        run_async(cli._run_terminal_command(command="echo two", tools=[bash], session=None))
-    finally:
-        run_async(session.close())
 
-    assert session.messages == [
-        UserMessage(content="Terminal command:\n$ echo one\n\nOutput:\ncommand output")
-    ]
-    output = capsys.readouterr().out
-    assert "[added to context]" in output
-    assert "[terminal only]" in output
+    async def exercise() -> None:
+        async with runtime:
+            await cli._run_terminal_command(runtime, "echo direct-output")
+            assert runtime.agent.messages == ()
+
+    run_async(exercise())
+
+    assert "direct-output" in capsys.readouterr().out
 
 
-def test_command_formatters_and_read_choice(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_command_helpers_are_stable() -> None:
     summary = ReloadSummary(
         skills=ReloadCategorySummary(before=1, after=2, changed=True),
         prompt_templates=ReloadCategorySummary(before=1, after=1, changed=False),
         context_files=ReloadCategorySummary(before=0, after=1, changed=True),
         system_prompt_rebuilt=True,
     )
-    assert cli._split_command("/model local") == ("/model", "local")
+
+    assert cli._split_command("/skill:review request") == ("/skill:review", "request")
     assert "system prompt updated" in cli._format_reload_summary(summary)
-
-    monkeypatch.setattr(builtins, "input", lambda _prompt="": " choice ")
-    assert cli._read_choice("pick") == "choice"
-    monkeypatch.setattr(builtins, "input", lambda _prompt="": "")
-    assert cli._read_choice("pick") is None
-
-
-def test_repl_routes_commands_to_workspace_session_and_session_picker(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    paths = _patch_session_home(monkeypatch, tmp_path)
-    resource_root = tmp_path / "resources"
-    project = tmp_path / "project"
-    project.mkdir()
-    (resource_root / "skills").mkdir(parents=True)
-    (resource_root / "prompts").mkdir(parents=True)
-    (resource_root / "AGENTS.md").write_text("global context", encoding="utf-8")
-    (resource_root / "skills" / "review.md").write_text("# Review skill", encoding="utf-8")
-    (resource_root / "prompts" / "fix.md").write_text("Fix {{arguments}}", encoding="utf-8")
-
-    info = OllamaModelInfo(name="local:latest", context_length=2048, supports_tools=True)
-    selected = OllamaModelInfo(name="other:latest", context_length=8192, supports_tools=True)
-    seen_prompts: list[str] = []
-    cleared: list[bool] = []
-
-    async def resolve_initial(_requested: str | None) -> OllamaModelInfo:
-        return info
-
-    async def select_model(_argument: str) -> OllamaModelInfo | None:
-        return selected
-
-    async def run_agent_turn(_session: Session, prompt: str) -> None:
-        seen_prompts.append(prompt)
-
-    def workspace_factory(*, cwd: Path, tools: list[AgentTool], model_cwd: str) -> Workspace:
-        return Workspace(
-            cwd=cwd,
-            tools=tools,
-            model_cwd=model_cwd,
-            resource_paths=ResourcePaths(root=resource_root),
-        )
-
-    monkeypatch.setattr(cli, "_resolve_initial_model", resolve_initial)
-    monkeypatch.setattr(cli, "_select_model", select_model)
-    monkeypatch.setattr(cli, "_run_agent_turn", run_agent_turn)
-    monkeypatch.setattr(
-        cli,
-        "create_coding_tools",
-        lambda *, environment: [make_tool(name="read"), make_tool(name="bash")],
-    )
-    monkeypatch.setattr(cli, "Workspace", workspace_factory)
-    monkeypatch.setattr(cli, "_clear_screen", lambda: cleared.append(True))
-    inputs = iter(
-        [
-            "/help",
-            "/clear",
-            "/model other",
-            "/skills review",
-            "/prompts fix",
-            "/skill:review inspect",
-            "/fix parser",
-            "/context",
-            "/reload",
-            "/session",
-            "/new",
-            "/resume",
-            "1",
-            "/exit",
-        ]
-    )
-    monkeypatch.setattr(builtins, "input", lambda _prompt="": next(inputs))
-
-    run_async(
-        cli._run_repl(
-            requested_model="local:latest",
-            cwd=project,
-            session_ref=None,
-            initial_prompt=None,
-        )
-    )
-
-    output = capsys.readouterr().out
-    assert cleared == [True]
-    assert "Current model: other:latest" in output
-    assert "Skill: review" in output
-    assert "Prompt template: fix" in output
-    assert "Active project context:" in output
-    assert "Session:" in output
-    assert "New session:" in output
-    assert "Resumed session:" in output
-    assert len(list(paths.sessions_dir.glob("*.jsonl"))) == 2
-    assert any("Review skill" in prompt and prompt.endswith("inspect") for prompt in seen_prompts)
-    assert "Fix parser" in seen_prompts
-
-
-@pytest.mark.parametrize("command", ["/quit", "/exit"])
-def test_repl_exit_commands_stop_cleanly(
-    command: str,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_session_home(monkeypatch, tmp_path)
-    info = OllamaModelInfo(name="local:latest", context_length=2048, supports_tools=True)
-
-    async def resolve_initial(_requested: str | None) -> OllamaModelInfo:
-        return info
-
-    monkeypatch.setattr(cli, "_resolve_initial_model", resolve_initial)
-    monkeypatch.setattr(builtins, "input", lambda _prompt="": command)
-
-    run_async(
-        cli._run_repl(
-            requested_model="local:latest",
-            cwd=tmp_path,
-            session_ref=None,
-            initial_prompt=None,
-        )
-    )
+    with pytest.raises(ValueError, match="does not accept"):
+        cli._require_no_argument("/reset", "unexpected")

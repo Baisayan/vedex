@@ -60,7 +60,10 @@ def test_default_and_custom_system_prompts_include_expected_context(tmp_path: Pa
 def test_template_rendering_and_skill_expansion_behave_as_commands(tmp_path: Path) -> None:
     root = tmp_path / "global"
     project = tmp_path / "project"
-    _write(root / "skills" / "review.md", "# Review instructions")
+    _write(
+        root / "skills" / "review" / "SKILL.md",
+        "---\ndescription: Review code\n---\n# Review instructions\nSecret workflow",
+    )
     _write(root / "prompts" / "fix.md", "Fix: {{arguments}}")
     _write(root / "prompts" / "plain.md", "Do the work")
     workspace = Workspace(
@@ -75,6 +78,10 @@ def test_template_rendering_and_skill_expansion_behave_as_commands(tmp_path: Pat
     expanded_skill = workspace.expand_skill_command("/skill:review inspect parser")
     assert expanded_skill is not None
     assert '<skill name="review"' in expanded_skill
+    assert "Secret workflow" not in workspace.system_prompt
+    assert str(root / "skills" / "review" / "SKILL.md") not in workspace.system_prompt
+    assert "Review instructions" in expanded_skill
+    assert "Secret workflow" in expanded_skill
     assert expanded_skill.endswith("inspect parser")
     assert workspace.expand_prompt_text("ordinary text") == "ordinary text"
 
@@ -94,7 +101,7 @@ def test_workspace_reload_reports_changes_and_rebuilds_only_system_prompt_inputs
 ) -> None:
     root = tmp_path / "global"
     project = tmp_path / "project"
-    skill_path = root / "skills" / "review.md"
+    skill_path = root / "skills" / "review" / "SKILL.md"
     prompt_path = root / "prompts" / "review.md"
     _write(skill_path, "# Review")
     _write(prompt_path, "review {{arguments}}")
@@ -131,7 +138,4 @@ def test_context_and_skill_formatting_are_deduplicated_and_escaped(tmp_path: Pat
 
     assert workspace.context_files == (context,)
     assert '<project_instructions path="same">' in format_project_context([context])
-    assert format_skill_invocation(skill) == (
-        f'<skill name="x" location="{skill.path}">\n'
-        f"References are relative to {skill.path.parent}.\n\nbody\n</skill>"
-    )
+    assert format_skill_invocation(skill) == ('<skill name="x">\nbody\n</skill>')

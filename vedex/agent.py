@@ -152,6 +152,10 @@ class Agent:
         return self._tools
 
     @property
+    def system_prompt(self) -> str:
+        return self._system_prompt
+
+    @property
     def is_running(self) -> bool:
         return self._active_run is not None
 
@@ -176,6 +180,12 @@ class Agent:
             raise RuntimeError("Cannot reset an Agent while it is running")
         self._messages.clear()
         self._last_result = None
+
+    def set_system_prompt(self, system_prompt: str) -> None:
+        """Replace resource-derived prompt state without changing conversation history."""
+        if self.is_running:
+            raise RuntimeError("Cannot change the system prompt while an Agent is running")
+        self._system_prompt = system_prompt
 
     async def run(self, content: str) -> AsyncIterator[AgentEvent]:
         if self.is_running:

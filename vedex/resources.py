@@ -11,10 +11,6 @@ class VedexPaths:
     home: Path = field(default_factory=lambda: Path.home() / ".vedex")
 
     @property
-    def sessions_dir(self) -> Path:
-        return self.home / "sessions"
-
-    @property
     def user_skills_dir(self) -> Path:
         return self.home / "skills"
 
@@ -152,12 +148,7 @@ class _MarkdownResource:
 
 
 def load_skills(paths: ResourcePaths | None = None) -> list[Skill]:
-    resources = _load_markdown_resources(
-        (paths or ResourcePaths()).skills_dirs,
-        "skill",
-        skip_filename="AGENTS.md",
-        include_subdirs=True,
-    )
+    resources = _load_standard_skills((paths or ResourcePaths()).skills_dirs)
     return [Skill(r.name, r.path, r.content, r.description) for r in resources]
 
 
@@ -174,7 +165,7 @@ def discover_project_context(
     for path in _context_file_candidates(resource_paths):
         try:
             content = path.read_text(encoding="utf-8")
-        except OSError as exc:
+        except (OSError, UnicodeDecodeError) as exc:
             _warn_optional_resource(f"could not read project context {path}: {exc}")
             continue
         context_files.append(ProjectContextFile(path=str(path), content=content))
@@ -184,9 +175,6 @@ def discover_project_context(
 def _load_markdown_resources(
     directories: Sequence[Path],
     resource_kind: str,
-    *,
-    skip_filename: str | None = None,
-    include_subdirs: bool = False,
 ) -> list[_MarkdownResource]:
     resources: list[_MarkdownResource] = []
     seen_names: set[str] = set()
@@ -194,36 +182,63 @@ def _load_markdown_resources(
         if not directory.is_dir():
             continue
 
-        files: list[Path] = []
-        if include_subdirs:
-            for item in sorted(directory.iterdir(), key=lambda item: item.name):
-                if item.is_dir():
-                    skill_path = item / "SKILL.md"
-                    if skill_path.exists():
-                        files.append(skill_path)
-                elif item.is_file() and item.suffix.lower() == ".md":
-                    if skip_filename and item.name.upper() == skip_filename.upper():
-                        continue
-                    files.append(item)
-        else:
+        try:
             files = [item for item in sorted(directory.glob("*.md")) if item.is_file()]
-
+        except OSError as exc:
+            _warn_optional_resource(f"could not list {resource_kind} directory {directory}: {exc}")
+            continue
         for path in files:
-            name = (
-                path.parent.name
-                if include_subdirs and path.name.upper() == "SKILL.MD" and path.parent != directory
-                else path.stem
-            )
+            name = path.stem
             normalized_name = name.casefold()
             if normalized_name in seen_names:
                 _warn_optional_resource(f"duplicate {resource_kind} '{name}' ignored: {path}")
                 continue
-            seen_names.add(normalized_name)
             try:
                 metadata, content = parse_markdown_resource(path.read_text(encoding="utf-8"))
             except (OSError, UnicodeDecodeError) as exc:
                 _warn_optional_resource(f"could not read {resource_kind} {path}: {exc}")
                 continue
+            seen_names.add(normalized_name)
+            resources.append(
+                _MarkdownResource(
+                    name=name,
+                    path=path,
+                    content=content,
+                    description=metadata.get("description") or derive_description(content),
+                )
+            )
+    return resources
+
+
+def _load_standard_skills(directories: Sequence[Path]) -> list[_MarkdownResource]:
+    resources: list[_MarkdownResource] = []
+    seen_names: set[str] = set()
+    for directory in directories:
+        if not directory.is_dir():
+            continue
+
+        try:
+            skill_directories = sorted(directory.iterdir(), key=lambda item: item.name)
+        except OSError as exc:
+            _warn_optional_resource(f"could not list skill directory {directory}: {exc}")
+            continue
+
+        for skill_directory in skill_directories:
+            path = skill_directory / "SKILL.md"
+            if not skill_directory.is_dir() or not path.is_file():
+                continue
+
+            name = skill_directory.name
+            normalized_name = name.casefold()
+            if normalized_name in seen_names:
+                _warn_optional_resource(f"duplicate skill '{name}' ignored: {path}")
+                continue
+            try:
+                metadata, content = parse_markdown_resource(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError) as exc:
+                _warn_optional_resource(f"could not read skill {path}: {exc}")
+                continue
+            seen_names.add(normalized_name)
             resources.append(
                 _MarkdownResource(
                     name=name,

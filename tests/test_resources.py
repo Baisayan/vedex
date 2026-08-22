@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 from vedex.resources import (
     ResourcePaths,
-    VedexPaths,
     derive_description,
     discover_project_context,
     load_prompt_templates,
@@ -25,15 +24,14 @@ def test_vedex_paths_and_resource_paths_only_use_global_and_project_vedex(tmp_pa
     project = tmp_path / "project"
     legacy_global = tmp_path / "global" / ".agents"
     legacy_project = project / ".agents"
-    _write(global_root / "skills" / "global.md", "# Global")
-    _write(project / ".vedex" / "skills" / "project.md", "# Project")
+    _write(global_root / "skills" / "global" / "SKILL.md", "# Global")
+    _write(project / ".vedex" / "skills" / "project" / "SKILL.md", "# Project")
     _write(legacy_global / "skills" / "legacy.md", "# Legacy")
     _write(legacy_project / "skills" / "legacy.md", "# Legacy")
 
     paths = ResourcePaths(root=global_root, cwd=project)
 
     assert [skill.name for skill in load_skills(paths)] == ["global", "project"]
-    assert VedexPaths(home=global_root).sessions_dir == global_root / "sessions"
     assert paths.skills_dirs == (global_root / "skills", project / ".vedex" / "skills")
     assert paths.prompts_dirs == (global_root / "prompts", project / ".vedex" / "prompts")
 
@@ -57,10 +55,13 @@ def test_skill_and_prompt_loading_handles_directories_duplicates_and_warnings(
     global_root = tmp_path / "global"
     project = tmp_path / "project"
     paths = ResourcePaths(root=global_root, cwd=project)
-    _write(global_root / "skills" / "single.md", "---\ndescription: One\n---\nbody")
+    _write(global_root / "skills" / "single.md", "# Legacy flat skill")
     _write(global_root / "skills" / "nested" / "SKILL.md", "# Nested skill")
-    _write(global_root / "skills" / "AGENTS.md", "must not become a skill")
-    _write(project / ".vedex" / "skills" / "single.md", "# Duplicate")
+    _write(
+        global_root / "skills" / "single" / "SKILL.md",
+        "---\ndescription: One\n---\nbody",
+    )
+    _write(project / ".vedex" / "skills" / "single" / "SKILL.md", "# Duplicate")
     _write(global_root / "prompts" / "review.md", "# Review")
     _write(project / ".vedex" / "prompts" / "review.md", "# Duplicate")
 
@@ -77,14 +78,16 @@ def test_skill_and_prompt_loading_handles_directories_duplicates_and_warnings(
     assert "duplicate prompt 'review'" in warning
 
 
-def test_unreadable_optional_resource_warns_and_is_skipped(
+def test_unreadable_optional_resource_warns_and_allows_lower_priority_fallback(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     root = tmp_path / "global"
-    unreadable = root / "skills" / "bad.md"
+    unreadable = root / "skills" / "bad" / "SKILL.md"
+    fallback = tmp_path / "project" / ".vedex" / "skills" / "bad" / "SKILL.md"
     _write(unreadable, "# bad")
+    _write(fallback, "# fallback")
     original_read_text = Path.read_text
 
     def read_text(path: Path, encoding: str | None = None, errors: str | None = None) -> str:
@@ -94,7 +97,9 @@ def test_unreadable_optional_resource_warns_and_is_skipped(
 
     monkeypatch.setattr(Path, "read_text", read_text)
 
-    assert load_skills(ResourcePaths(root=root)) == []
+    skills = load_skills(ResourcePaths(root=root, cwd=tmp_path / "project"))
+
+    assert [skill.content for skill in skills] == ["# fallback"]
     assert "could not read skill" in capsys.readouterr().err
 
 

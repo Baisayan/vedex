@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncGenerator, AsyncIterator, Mapping
 from typing import cast
 
 import pytest
@@ -118,6 +118,47 @@ def test_agent_streams_normalized_events_and_completes_with_usage() -> None:
     assert agent.last_result.turns == 1
     assert agent.last_result.tool_calls == 0
     assert agent.usage == usage
+
+
+def test_agent_replaces_system_prompt_without_changing_history() -> None:
+    adapter = FakeAdapter(
+        [
+            _completed_stream(AssistantMessage(content="first")),
+            _completed_stream(AssistantMessage(content="second")),
+        ]
+    )
+    agent = _agent(adapter, system_prompt="old prompt")
+
+    run_async(_collect(agent, "one"))
+    messages_before = agent.messages
+    agent.set_system_prompt("new prompt")
+    run_async(_collect(agent, "two"))
+
+    assert agent.system_prompt == "new prompt"
+    assert agent.messages[: len(messages_before)] == messages_before
+    assert adapter.requests[0].system == "old prompt"
+    assert adapter.requests[1].system == "new prompt"
+
+
+def test_agent_rejects_prompt_changes_and_reset_during_an_active_run() -> None:
+    agent = _agent(_BlockingAdapter())
+
+    async def exercise() -> None:
+        events = cast(AsyncGenerator[AgentEvent, None], agent.run("wait"))
+        while True:
+            event = await anext(events)
+            if isinstance(event, MessageStartEvent) and event.message_role == "assistant":
+                break
+
+        with pytest.raises(RuntimeError, match="change the system prompt"):
+            agent.set_system_prompt("new")
+        with pytest.raises(RuntimeError, match="reset"):
+            agent.reset()
+        await events.aclose()
+
+    run_async(exercise())
+
+    assert agent.is_running is False
 
 
 def test_agent_executes_tools_sequentially_and_keeps_ordinary_failures() -> None:
