@@ -15,6 +15,10 @@ type JSONPrimitive = str | int | float | bool | None
 type JSONValue = JSONPrimitive | list[JSONValue] | dict[str, JSONValue]
 
 
+class FatalEnvironmentError(RuntimeError):
+    """Raised when the active execution environment cannot safely continue."""
+
+
 # Tools
 
 
@@ -75,6 +79,7 @@ class AssistantMessage(BaseModel):
     role: Literal["assistant"] = "assistant"
     content: str = ""
     tool_calls: list[ToolCall] = Field(default_factory=list)
+    metadata: dict[str, JSONValue] = Field(default_factory=dict)
 
 
 class ToolResultMessage(BaseModel):
@@ -95,6 +100,19 @@ type AgentMessage = UserMessage | AssistantMessage | ToolResultMessage
 # AgentEvent = what the loop yields to the CLI
 
 
+type AgentStatus = Literal[
+    "completed",
+    "model_failure",
+    "cancelled",
+    "timed_out",
+    "turn_limit",
+    "tool_call_limit",
+    "context_limit",
+    "malformed_model_stream",
+    "fatal_environment_failure",
+]
+
+
 class AgentStartEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
     type: Literal["agent_start"] = "agent_start"
@@ -103,6 +121,8 @@ class AgentStartEvent(BaseModel):
 class AgentEndEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
     type: Literal["agent_end"] = "agent_end"
+    status: AgentStatus | None = None
+    message: str | None = None
 
 
 class TurnStartEvent(BaseModel):
