@@ -7,6 +7,7 @@ from datetime import date
 from pathlib import Path
 from xml.sax.saxutils import escape
 
+from .environments import normalize_workspace_path
 from .resources import (
     ProjectContextFile,
     PromptTemplate,
@@ -36,8 +37,10 @@ class Workspace:
         custom_system_prompt: str | None = None,
         append_system_prompt: str | None = None,
         context_files: Sequence[ProjectContextFile] = (),
+        model_cwd: str = ".",
     ) -> None:
         self.cwd = cwd
+        self._model_cwd = normalize_workspace_path(model_cwd)
         self._tools = tuple(tools)
         self._resource_paths = resource_paths_with_cwd(resource_paths, cwd)
         self._custom_system_prompt = custom_system_prompt
@@ -158,6 +161,7 @@ class Workspace:
             custom_prompt=self._custom_system_prompt,
             append_system_prompt=self._append_system_prompt,
             context_files=self._context_files,
+            model_cwd=self._model_cwd,
         )
 
 
@@ -190,9 +194,10 @@ def build_system_prompt(
     context_files: Sequence[ProjectContextFile],
     current_date: date | None = None,
     extra_guidelines: Sequence[str] = (),
+    model_cwd: str = ".",
 ) -> str:
     current_date = current_date or date.today()
-    formatted_cwd = str(cwd).replace("\\", "/")
+    formatted_cwd = normalize_workspace_path(model_cwd)
     append_section = f"\n\n{append_system_prompt}" if append_system_prompt else ""
 
     if custom_prompt is not None:
@@ -302,8 +307,8 @@ def format_skills_for_prompt(skills: Sequence[Skill]) -> str:
     lines = [
         "\n\nThe following skills provide specialized instructions for specific tasks.",
         "Read the full skill file when the task matches its description.",
-        "When a skill file references a relative path, resolve it against the skill directory "
-        "(parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.",
+        "Use workspace-relative paths in tool commands; skill source locations are resource "
+        "identifiers, not tool paths.",
         "",
         "<available_skills>",
     ]

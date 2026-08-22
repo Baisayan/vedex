@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
 from vedex.core import OllamaClient
+from vedex.environments import LocalEnvironment
 from vedex.resources import ResourcePaths
 from vedex.schema import AgentTool, AgentToolResult, CancellationToken, JSONValue
 
@@ -84,6 +85,16 @@ def make_tool(
         executor=execute,
         prompt_snippet=f"Run {name}",
     )
+
+
+@pytest.fixture
+def local_environment(tmp_path: Path) -> Iterator[LocalEnvironment]:
+    environment = LocalEnvironment(tmp_path)
+    run_async(environment.start())
+    try:
+        yield environment
+    finally:
+        run_async(environment.stop())
 
 
 @pytest.fixture

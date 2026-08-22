@@ -2,41 +2,56 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from pathlib import Path
 
+from ..environments import Environment, EnvironmentFileError, WorkspacePathError
 from ..schema import AgentTool, AgentToolResult, CancellationToken, JSONValue
-from .base import ToolDefinition, ToolInputError, _file_lock, _path_arg
+from .base import ToolDefinition, ToolInputError, _workspace_path_arg
 
 UTF8_BOM = "\ufeff"
 
 
-def create_edit_tool_definition(*, cwd: str | Path | None = None) -> ToolDefinition:
-    root = Path.cwd() if cwd is None else Path(cwd)
-
+def create_edit_tool_definition(*, environment: Environment) -> ToolDefinition:
     async def execute(
         arguments: Mapping[str, JSONValue],
         signal: CancellationToken | None = None,
     ) -> AgentToolResult:
-        del signal
         prepared = _prepare_edit_arguments(arguments)
-        path = _path_arg(prepared, "path", cwd=root)
+        path = _workspace_path_arg(prepared, "path", environment=environment)
         edits = _edits_arg(prepared)
 
-        if not path.exists():
-            raise ToolInputError(f"Could not edit file: {path}. File not found.")
-        if path.is_dir():
-            raise ToolInputError(f"Could not edit file: {path}. Path is a directory.")
+        try:
+            raw_bytes = await environment.read_bytes(path, signal=signal)
+        except WorkspacePathError as exc:
+            raise ToolInputError(f"Invalid workspace path {path!r}: {exc.reason}") from exc
+        except EnvironmentFileError as exc:
+            if exc.kind == "not_found":
+                raise ToolInputError(f"Could not edit file: {path}. File not found.") from exc
+            if exc.kind == "is_directory":
+                raise ToolInputError(f"Could not edit file: {path}. Path is a directory.") from exc
+            detail = exc.detail or exc.kind.replace("_", " ")
+            raise ToolInputError(f"Could not edit file: {path}. {detail}.") from exc
 
-        async with _file_lock(path):
-            with path.open(encoding="utf-8", newline="") as file:
-                raw_content = file.read()
-            bom, content = _strip_bom(raw_content)
-            original_ending = detect_line_ending(content)
-            normalized = normalize_to_lf(content)
-            new_content = apply_edits_to_normalized_content(normalized, edits, str(path))
-            final_content = bom + restore_line_endings(new_content, original_ending)
-            with path.open("w", encoding="utf-8", newline="") as file:
-                file.write(final_content)
+        if b"\0" in raw_bytes:
+            raise ToolInputError(f"Could not edit file: {path}. File is not valid UTF-8 text.")
+        try:
+            raw_content = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ToolInputError(
+                f"Could not edit file: {path}. File is not valid UTF-8 text."
+            ) from exc
+
+        bom, content = _strip_bom(raw_content)
+        original_ending = detect_line_ending(content)
+        normalized = normalize_to_lf(content)
+        new_content = apply_edits_to_normalized_content(normalized, edits, path)
+        final_content = bom + restore_line_endings(new_content, original_ending)
+        try:
+            await environment.write_bytes(path, final_content.encode("utf-8"), signal=signal)
+        except WorkspacePathError as exc:
+            raise ToolInputError(f"Invalid workspace path {path!r}: {exc.reason}") from exc
+        except EnvironmentFileError as exc:
+            detail = exc.detail or exc.kind.replace("_", " ")
+            raise ToolInputError(f"Could not edit file: {path}. {detail}.") from exc
 
         return AgentToolResult(
             tool_call_id="",
@@ -51,7 +66,8 @@ def create_edit_tool_definition(*, cwd: str | Path | None = None) -> ToolDefinit
             "Edit a single file using exact text replacement. Every edits[].oldText must match "
             "a unique, non-overlapping region of the original file. If two changes affect the "
             "same block or nearby lines, merge them into one edit instead of emitting overlapping "
-            "edits. Do not include large unchanged regions just to connect distant changes."
+            "edits. Do not include large unchanged regions just to connect distant changes. "
+            "Paths must be workspace-relative."
         ),
         prompt_snippet=(
             "Make precise file edits with exact text replacement, including multiple disjoint "
@@ -92,8 +108,8 @@ def create_edit_tool_definition(*, cwd: str | Path | None = None) -> ToolDefinit
     )
 
 
-def create_edit_tool(*, cwd: str | Path | None = None) -> AgentTool:
-    return create_edit_tool_definition(cwd=cwd).to_agent_tool()
+def create_edit_tool(*, environment: Environment) -> AgentTool:
+    return create_edit_tool_definition(environment=environment).to_agent_tool()
 
 
 def detect_line_ending(content: str) -> str:

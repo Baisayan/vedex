@@ -1,41 +1,44 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from pathlib import Path
 
+from ..environments import Environment, EnvironmentFileError, WorkspacePathError
 from ..schema import AgentTool, AgentToolResult, CancellationToken, JSONValue
-from .base import ToolDefinition, _file_lock, _path_arg, _str_arg
+from .base import ToolDefinition, ToolInputError, _str_arg, _workspace_path_arg
 
 
-def create_write_tool_definition(*, cwd: str | Path | None = None) -> ToolDefinition:
-    root = Path.cwd() if cwd is None else Path(cwd)
-
+def create_write_tool_definition(*, environment: Environment) -> ToolDefinition:
     async def execute(
         arguments: Mapping[str, JSONValue],
         signal: CancellationToken | None = None,
     ) -> AgentToolResult:
-        del signal
-        path = _path_arg(arguments, "path", cwd=root)
+        path = _workspace_path_arg(arguments, "path", environment=environment)
         content = _str_arg(arguments, "content")
+        encoded = content.encode("utf-8")
 
-        async with _file_lock(path):
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with path.open("w", encoding="utf-8", newline="") as file:
-                file.write(content)
+        try:
+            await environment.write_bytes(path, encoded, signal=signal)
+        except WorkspacePathError as exc:
+            raise ToolInputError(f"Invalid workspace path {path!r}: {exc.reason}") from exc
+        except EnvironmentFileError as exc:
+            if exc.kind == "is_directory":
+                raise ToolInputError(f"Could not write file {path}: path is a directory") from exc
+            detail = exc.detail or exc.kind.replace("_", " ")
+            raise ToolInputError(f"Could not write file {path}: {detail}") from exc
 
         return AgentToolResult(
             tool_call_id="",
             name="write",
             ok=True,
             content=f"Successfully wrote to {path}.",
-            data={"path": str(path), "characters": len(content)},
+            data={"path": path, "characters": len(content), "bytes": len(encoded)},
         )
 
     return ToolDefinition(
         name="write",
         description=(
             "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. "
-            "Automatically creates parent directories."
+            "Automatically creates parent directories. Paths must be workspace-relative."
         ),
         prompt_snippet="Create or overwrite files",
         prompt_guidelines=("Use write only for new files or complete rewrites.",),
@@ -46,10 +49,11 @@ def create_write_tool_definition(*, cwd: str | Path | None = None) -> ToolDefini
                 "content": {"type": "string", "description": "Content to write to the file"},
             },
             "required": ["path", "content"],
+            "additionalProperties": False,
         },
         executor=execute,
     )
 
 
-def create_write_tool(*, cwd: str | Path | None = None) -> AgentTool:
-    return create_write_tool_definition(cwd=cwd).to_agent_tool()
+def create_write_tool(*, environment: Environment) -> AgentTool:
+    return create_write_tool_definition(environment=environment).to_agent_tool()

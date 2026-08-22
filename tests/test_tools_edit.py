@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from vedex.environments import LocalEnvironment
 from vedex.schema import JSONValue
 from vedex.tools import (
     UTF8_BOM,
@@ -17,10 +18,13 @@ from vedex.tools import (
 from .conftest import run_async
 
 
-def test_edit_applies_disjoint_original_matches(tmp_path: Path) -> None:
+def test_edit_applies_disjoint_original_matches(
+    tmp_path: Path,
+    local_environment: LocalEnvironment,
+) -> None:
     path = tmp_path / "file.txt"
     path.write_text("alpha\nbeta\ngamma", encoding="utf-8")
-    tool = create_edit_tool(cwd=tmp_path)
+    tool = create_edit_tool(environment=local_environment)
 
     result = run_async(
         tool.execute(
@@ -35,13 +39,16 @@ def test_edit_applies_disjoint_original_matches(tmp_path: Path) -> None:
     )
 
     assert path.read_text(encoding="utf-8") == "one\nbeta\nthree"
-    assert result.content == f"Edited {path}: 2 replacement(s)."
+    assert result.content == "Edited file.txt: 2 replacement(s)."
 
 
-def test_edit_accepts_json_and_legacy_edit_arguments_and_preserves_bom_crlf(tmp_path: Path) -> None:
+def test_edit_accepts_json_and_legacy_edit_arguments_and_preserves_bom_crlf(
+    tmp_path: Path,
+    local_environment: LocalEnvironment,
+) -> None:
     path = tmp_path / "file.txt"
     path.write_bytes(f"{UTF8_BOM}old\r\nkeep\r\n".encode())
-    tool = create_edit_tool(cwd=tmp_path)
+    tool = create_edit_tool(environment=local_environment)
 
     run_async(
         tool.execute(
@@ -70,11 +77,15 @@ def test_edit_accepts_json_and_legacy_edit_arguments_and_preserves_bom_crlf(tmp_
 def test_edit_rejects_invalid_or_unapplicable_edits(
     arguments: dict[str, JSONValue],
     tmp_path: Path,
+    local_environment: LocalEnvironment,
 ) -> None:
-    (tmp_path / "file.txt").write_text("same\nsame", encoding="utf-8")
-    tool = create_edit_tool(cwd=tmp_path)
+    file_path = tmp_path / "file.txt"
+    file_path.write_text("same\nsame", encoding="utf-8")
+    original = file_path.read_bytes()
+    tool = create_edit_tool(environment=local_environment)
     with pytest.raises(ToolInputError):
         run_async(tool.execute(arguments))
+    assert file_path.read_bytes() == original
 
 
 def test_edit_rejects_duplicate_and_overlapping_matches() -> None:
@@ -84,10 +95,13 @@ def test_edit_rejects_duplicate_and_overlapping_matches() -> None:
         )
 
 
-def test_edit_rejects_directory_and_non_object_edit_entries(tmp_path: Path) -> None:
+def test_edit_rejects_directory_and_non_object_edit_entries(
+    tmp_path: Path,
+    local_environment: LocalEnvironment,
+) -> None:
     (tmp_path / "directory").mkdir()
     (tmp_path / "file.txt").write_text("text", encoding="utf-8")
-    tool = create_edit_tool(cwd=tmp_path)
+    tool = create_edit_tool(environment=local_environment)
 
     with pytest.raises(ToolInputError, match="Path is a directory"):
         run_async(tool.execute({"path": "directory", "edits": [{"oldText": "a", "newText": "b"}]}))

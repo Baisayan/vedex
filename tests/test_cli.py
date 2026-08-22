@@ -174,6 +174,7 @@ def test_repl_routes_commands_to_workspace_session_and_session_picker(
     paths = _patch_session_home(monkeypatch, tmp_path)
     resource_root = tmp_path / "resources"
     project = tmp_path / "project"
+    project.mkdir()
     (resource_root / "skills").mkdir(parents=True)
     (resource_root / "prompts").mkdir(parents=True)
     (resource_root / "AGENTS.md").write_text("global context", encoding="utf-8")
@@ -194,10 +195,11 @@ def test_repl_routes_commands_to_workspace_session_and_session_picker(
     async def run_agent_turn(_session: Session, prompt: str) -> None:
         seen_prompts.append(prompt)
 
-    def workspace_factory(*, cwd: Path, tools: list[AgentTool]) -> Workspace:
+    def workspace_factory(*, cwd: Path, tools: list[AgentTool], model_cwd: str) -> Workspace:
         return Workspace(
             cwd=cwd,
             tools=tools,
+            model_cwd=model_cwd,
             resource_paths=ResourcePaths(root=resource_root),
         )
 
@@ -207,7 +209,7 @@ def test_repl_routes_commands_to_workspace_session_and_session_picker(
     monkeypatch.setattr(
         cli,
         "create_coding_tools",
-        lambda *, cwd: [make_tool(name="read"), make_tool(name="bash")],
+        lambda *, environment: [make_tool(name="read"), make_tool(name="bash")],
     )
     monkeypatch.setattr(cli, "Workspace", workspace_factory)
     monkeypatch.setattr(cli, "_clear_screen", lambda: cleared.append(True))

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from pathlib import Path
 
+from ..environments import Environment, EnvironmentFileError, WorkspacePathError
 from ..schema import AgentTool, AgentToolResult, CancellationToken, JSONValue
 from .base import (
     DEFAULT_MAX_OUTPUT_BYTES,
@@ -10,21 +10,18 @@ from .base import (
     ToolDefinition,
     ToolInputError,
     _optional_int_arg,
-    _path_arg,
+    _workspace_path_arg,
     format_size,
     truncate_head,
 )
 
 
-def create_read_tool_definition(*, cwd: str | Path | None = None) -> ToolDefinition:
-    root = Path.cwd() if cwd is None else Path(cwd)
-
+def create_read_tool_definition(*, environment: Environment) -> ToolDefinition:
     async def execute(
         arguments: Mapping[str, JSONValue],
         signal: CancellationToken | None = None,
     ) -> AgentToolResult:
-        del signal
-        path = _path_arg(arguments, "path", cwd=root)
+        path = _workspace_path_arg(arguments, "path", environment=environment)
         offset = _optional_int_arg(arguments, "offset")
         limit = _optional_int_arg(arguments, "limit")
 
@@ -36,12 +33,17 @@ def create_read_tool_definition(*, cwd: str | Path | None = None) -> ToolDefinit
             raise ToolInputError("offset must be at least 1")
         if not 1 <= limit <= DEFAULT_MAX_OUTPUT_LINES:
             raise ToolInputError(f"limit must be between 1 and {DEFAULT_MAX_OUTPUT_LINES}")
-        if not path.exists():
-            raise ToolInputError(f"File not found: {path}")
-        if path.is_dir():
-            raise ToolInputError(f"Path is a directory: {path}")
-
-        data = path.read_bytes()
+        try:
+            data = await environment.read_bytes(path, signal=signal)
+        except WorkspacePathError as exc:
+            raise ToolInputError(f"Invalid workspace path {path!r}: {exc.reason}") from exc
+        except EnvironmentFileError as exc:
+            if exc.kind == "not_found":
+                raise ToolInputError(f"File not found: {path}") from exc
+            if exc.kind == "is_directory":
+                raise ToolInputError(f"Path is a directory: {path}") from exc
+            detail = f": {exc.detail}" if exc.detail else ""
+            raise ToolInputError(f"Could not read file {path}{detail}") from exc
         if b"\0" in data:
             raise ToolInputError(f"File is not valid UTF-8 text: {path}")
         try:
@@ -115,7 +117,7 @@ def create_read_tool_definition(*, cwd: str | Path | None = None) -> ToolDefinit
             "Read the contents of a UTF-8 text file. Output is truncated to "
             f"{DEFAULT_MAX_OUTPUT_LINES} lines or {DEFAULT_MAX_OUTPUT_BYTES // 1024}KB "
             "(whichever is hit first). Use offset/limit for large files. When you need the "
-            "full file, continue with offset until complete."
+            "full file, continue with offset until complete. Paths must be workspace-relative."
         ),
         prompt_snippet="Read file contents",
         prompt_guidelines=("Use read to examine files instead of cat or sed.",),
@@ -144,5 +146,5 @@ def create_read_tool_definition(*, cwd: str | Path | None = None) -> ToolDefinit
     )
 
 
-def create_read_tool(*, cwd: str | Path | None = None) -> AgentTool:
-    return create_read_tool_definition(cwd=cwd).to_agent_tool()
+def create_read_tool(*, environment: Environment) -> AgentTool:
+    return create_read_tool_definition(environment=environment).to_agent_tool()

@@ -1,28 +1,27 @@
 from __future__ import annotations
 
-import asyncio
-from pathlib import Path
-
 import pytest
+from vedex.environments import LocalEnvironment
 from vedex.tools import create_coding_tools
 from vedex.tools.base import (
     ToolDefinition,
     ToolInputError,
-    _file_lock,
     _optional_int_arg,
-    _path_arg,
     _str_arg,
+    _workspace_path_arg,
     append_status_block,
     format_size,
     truncate_head,
     truncate_tail,
 )
 
-from .conftest import make_tool, run_async
+from .conftest import make_tool
 
 
-def test_public_tools_package_and_factory_expose_the_four_coding_tools(tmp_path: Path) -> None:
-    tools = create_coding_tools(cwd=tmp_path)
+def test_public_tools_package_and_factory_expose_the_four_coding_tools(
+    local_environment: LocalEnvironment,
+) -> None:
+    tools = create_coding_tools(environment=local_environment)
     definition = ToolDefinition(
         name="check",
         description="Check.",
@@ -63,10 +62,19 @@ def test_status_and_head_tail_truncation_cover_lines_bytes_and_large_single_line
     assert tail_bytes.to_json()["max_bytes"] == 50 * 1024
 
 
-def test_tool_argument_helpers_validate_types_and_resolve_paths(tmp_path: Path) -> None:
+def test_tool_argument_helpers_validate_types_and_resolve_paths(
+    local_environment: LocalEnvironment,
+) -> None:
     assert _str_arg({"name": "value"}, "name") == "value"
     assert _optional_int_arg({"value": 2}, "value") == 2
-    assert _path_arg({"path": "child.txt"}, "path", cwd=tmp_path) == tmp_path / "child.txt"
+    assert (
+        _workspace_path_arg(
+            {"path": "nested/../child.txt"},
+            "path",
+            environment=local_environment,
+        )
+        == "child.txt"
+    )
 
     for callback in (
         lambda: _str_arg({}, "name"),
@@ -74,29 +82,3 @@ def test_tool_argument_helpers_validate_types_and_resolve_paths(tmp_path: Path) 
     ):
         with pytest.raises(ToolInputError):
             callback()
-
-
-def test_file_lock_serializes_same_path_access(tmp_path: Path) -> None:
-    async def run() -> list[str]:
-        order: list[str] = []
-        release_first = asyncio.Event()
-
-        async def first() -> None:
-            async with _file_lock(tmp_path / "same.txt"):
-                order.append("first")
-                await release_first.wait()
-
-        async def second() -> None:
-            async with _file_lock(tmp_path / "same.txt"):
-                order.append("second")
-
-        first_task = asyncio.create_task(first())
-        await asyncio.sleep(0)
-        second_task = asyncio.create_task(second())
-        await asyncio.sleep(0)
-        assert order == ["first"]
-        release_first.set()
-        await asyncio.gather(first_task, second_task)
-        return order
-
-    assert run_async(run()) == ["first", "second"]

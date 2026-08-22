@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
-from pathlib import Path
 
+from ..environments import Environment, WorkspacePathError
 from ..schema import (
     AgentTool,
     JSONValue,
@@ -57,24 +56,20 @@ class ToolDefinition:
         )
 
 
-_file_locks: dict[Path, asyncio.Lock] = {}
-
-
 def create_coding_tools(
     *,
-    cwd: str | Path | None = None,
+    environment: Environment,
 ) -> list[AgentTool]:
     from .bash import create_bash_tool
     from .edit import create_edit_tool
     from .read import create_read_tool
     from .write import create_write_tool
 
-    root = Path.cwd() if cwd is None else Path(cwd)
     return [
-        create_read_tool(cwd=root),
-        create_write_tool(cwd=root),
-        create_edit_tool(cwd=root),
-        create_bash_tool(cwd=root),
+        create_read_tool(environment=environment),
+        create_write_tool(environment=environment),
+        create_edit_tool(environment=environment),
+        create_bash_tool(environment=environment),
     ]
 
 
@@ -230,9 +225,17 @@ def _str_arg(arguments: Mapping[str, JSONValue], name: str) -> str:
     return value
 
 
-def _path_arg(arguments: Mapping[str, JSONValue], name: str, *, cwd: Path) -> Path:
-    path = Path(_str_arg(arguments, name)).expanduser()
-    return path if path.is_absolute() else cwd / path
+def _workspace_path_arg(
+    arguments: Mapping[str, JSONValue],
+    name: str,
+    *,
+    environment: Environment,
+) -> str:
+    path = _str_arg(arguments, name)
+    try:
+        return environment.normalize_path(path)
+    except WorkspacePathError as exc:
+        raise ToolInputError(f"Invalid workspace path {path!r}: {exc.reason}") from exc
 
 
 def _optional_int_arg(arguments: Mapping[str, JSONValue], name: str) -> int | None:
@@ -242,22 +245,3 @@ def _optional_int_arg(arguments: Mapping[str, JSONValue], name: str) -> int | No
     if not isinstance(value, int):
         raise ToolInputError(f"{name} must be an integer")
     return value
-
-
-class _FileLockContext:
-    def __init__(self, path: Path) -> None:
-        self._path = path.resolve()
-        self._lock: asyncio.Lock | None = None
-
-    async def __aenter__(self) -> None:
-        lock = _file_locks.setdefault(self._path, asyncio.Lock())
-        self._lock = lock
-        await lock.acquire()
-
-    async def __aexit__(self, _exc_type: object, _exc: object, _tb: object) -> None:
-        if self._lock is not None:
-            self._lock.release()
-
-
-def _file_lock(path: Path) -> _FileLockContext:
-    return _FileLockContext(path)

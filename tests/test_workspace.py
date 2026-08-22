@@ -51,6 +51,8 @@ def test_default_and_custom_system_prompts_include_expected_context(tmp_path: Pa
     assert "<available_skills>" in prompt
     assert "C:/project/&lt;AGENTS&gt;.md" in prompt
     assert "Current date: 2026-07-28" in prompt
+    assert "Current working directory: ." in prompt
+    assert str(tmp_path).replace("\\", "/") not in prompt
     assert custom.startswith("custom\n\nappend")
     assert "<available_skills>" not in custom
 

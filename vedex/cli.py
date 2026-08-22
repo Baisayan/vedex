@@ -16,6 +16,7 @@ import httpx
 import typer
 
 from .core import OLLAMA_HOST, OllamaClient, OllamaModelInfo, list_model_info
+from .environments import LocalEnvironment
 from .rendering import CommandLineRenderer
 from .resources import PromptTemplate, ResourceError, Skill, VedexPaths
 from .schema import AgentMessage, AgentTool, UserMessage
@@ -109,16 +110,26 @@ async def _run_repl(
     initial_prompt: str | None,
 ) -> None:
     model_info = await _resolve_initial_model(requested_model)
-    tools = create_coding_tools(cwd=cwd)
-    workspace = Workspace(cwd=cwd, tools=tools)
-    store = _resolve_session_store(session_ref) if session_ref else _new_session_store()
-    session = _create_session(
-        cwd=cwd,
-        model_info=model_info,
-        workspace=workspace,
-        tools=tools,
-        store=store,
-    )
+    environment = LocalEnvironment(cwd)
+    await environment.start()
+    try:
+        tools = create_coding_tools(environment=environment)
+        workspace = Workspace(
+            cwd=cwd,
+            tools=tools,
+            model_cwd=environment.workspace.model_root,
+        )
+        store = _resolve_session_store(session_ref) if session_ref else _new_session_store()
+        session = _create_session(
+            cwd=cwd,
+            model_info=model_info,
+            workspace=workspace,
+            tools=tools,
+            store=store,
+        )
+    except BaseException:
+        await environment.stop()
+        raise
 
     try:
         if initial_prompt is not None:
@@ -232,7 +243,10 @@ async def _run_repl(
             except (OSError, ResourceError, SessionError, ValueError) as exc:
                 typer.echo(f"Error: {exc}", err=True)
     finally:
-        await session.close()
+        try:
+            await session.close()
+        finally:
+            await environment.stop()
 
 
 async def _resolve_initial_model(requested_model: str | None) -> OllamaModelInfo:
