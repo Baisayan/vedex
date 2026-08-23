@@ -17,10 +17,20 @@ from .base import (
     WorkspacePathError,
     normalize_workspace_path,
 )
+from .docker import (
+    DockerEnvironment,
+    DockerEnvironmentConfig,
+    DockerPullPolicy,
+    DockerWorkspaceMode,
+)
 from .local import LocalEnvironment
 
 __all__ = [
     "CommandResult",
+    "DockerEnvironment",
+    "DockerEnvironmentConfig",
+    "DockerPullPolicy",
+    "DockerWorkspaceMode",
     "Environment",
     "EnvironmentCancelledError",
     "EnvironmentExportError",

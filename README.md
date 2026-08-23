@@ -15,9 +15,9 @@ only in memory and disappears when the process exits.
   deterministic tests and optional OpenAI and Gemini runtime adapters.
 - An ephemeral Agent with explicit limits, cancellation, usage, context policy,
   sequential tool calls, and terminal statuses.
-- `Environment` and `LocalEnvironment` contracts for byte-based file access,
-  foreground commands, patch collection, workspace export, and reproducibility
-  metadata.
+- One `Environment` contract with local and Docker backends for byte-based file
+  access, foreground commands, patch collection, workspace export, and
+  reproducibility metadata.
 - Environment-bound `read`, `write`, `edit`, and `bash` tools whose published
   schemas are their only accepted input contracts.
 - `AppRuntime` for environment lifecycle, project resources, system-prompt
@@ -34,8 +34,7 @@ durable conversation store. Optional adapters normalize provider events and
 failures before the Agent sees them; filesystem and process mechanics remain
 inside environments.
 
-Docker execution and benchmark runners are not implemented yet. No benchmark
-score is claimed.
+Benchmark runners are not implemented yet. No benchmark score is claimed.
 
 ## Interactive REPL
 
@@ -101,6 +100,44 @@ The runtime and recorder are also usable independently:
 
 Run artifacts are explicit outputs only. They are never loaded as conversation
 memory and are not durable sessions.
+
+## Docker environment
+
+`DockerEnvironment` uses the selected Docker-compatible command-line engine and
+does not add a Python SDK dependency. The configured engine must be installed
+and able to reach its daemon. It supports three workspace modes:
+
+- `image` uses a repository already present at `workdir` in the image. This is
+  the default for benchmark images.
+- `copy` copies a host workspace into a fresh container layer.
+- `mount` bind-mounts a host workspace for direct personal use.
+
+Containers receive unique names and are removed by explicit `stop()` or async
+context-manager cleanup. Network access defaults to `none`; personal runs can
+opt into another network explicitly. CPU, memory, environment variables,
+workdir, command limits, and lifecycle timeouts are configurable. Run metadata
+records the resolved image digest, architecture, engine version, network policy,
+workspace mode, workdir, and resource limits.
+
+```python
+from pathlib import Path
+
+from vedex.environments import DockerEnvironment, DockerEnvironmentConfig
+
+environment = DockerEnvironment(
+    DockerEnvironmentConfig(
+        image="your-image@sha256:...",
+        workspace_mode="copy",
+        workspace=Path.cwd(),
+        cpus=2,
+        memory="4g",
+    )
+)
+```
+
+The same environment object can be passed to `AppRuntime`, `run_repl()`, or
+`run_headless()`. Model-visible tool paths remain workspace-relative in every
+mode.
 
 ## Development
 
