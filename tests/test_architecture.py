@@ -77,3 +77,18 @@ def test_tool_modules_do_not_import_filesystem_or_process_implementations() -> N
             and node.func.id == "open"
         ]
         assert direct_open_calls == [], name
+
+
+def test_provider_sdks_stay_inside_their_adapter_modules() -> None:
+    sdk_importers: dict[str, set[str]] = {"openai": set(), "google": set()}
+    for path in PACKAGE_ROOT.rglob("*.py"):
+        relative_path = path.relative_to(PACKAGE_ROOT).as_posix()
+        roots = _import_roots(path)
+        for sdk_root in sdk_importers:
+            if sdk_root in roots:
+                sdk_importers[sdk_root].add(relative_path)
+
+    assert sdk_importers == {
+        "openai": {"models/openai.py"},
+        "google": {"models/gemini.py"},
+    }

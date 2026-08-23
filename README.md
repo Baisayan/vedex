@@ -12,7 +12,7 @@ only in memory and disappears when the process exits.
 ## Implemented runtime
 
 - `ModelAdapter` and normalized model streams, with `FakeAdapter` for offline
-  deterministic tests.
+  deterministic tests and optional OpenAI and Gemini runtime adapters.
 - An ephemeral Agent with explicit limits, cancellation, usage, context policy,
   sequential tool calls, and terminal statuses.
 - `Environment` and `LocalEnvironment` contracts for byte-based file access,
@@ -29,12 +29,13 @@ only in memory and disappears when the process exits.
 - Versioned JSON run artifacts containing configuration, hashes, messages,
   normalized events, usage, timing, status, and a patch or workspace export.
 
-The base package has no provider client or model-discovery path and no durable
-conversation store. Adapters normalize provider events and failures before the
-Agent sees them; filesystem and process mechanics remain inside environments.
+The base installation has no provider client or model-discovery path and no
+durable conversation store. Optional adapters normalize provider events and
+failures before the Agent sees them; filesystem and process mechanics remain
+inside environments.
 
-Docker execution, built-in production model adapters, and benchmark runners are
-not implemented yet. No benchmark score is claimed.
+Docker execution and benchmark runners are not implemented yet. No benchmark
+score is claimed.
 
 ## Interactive REPL
 
@@ -47,9 +48,22 @@ the REPL itself.
 vedex --adapter your_package.adapters:create_adapter --model model-id --cwd .
 ```
 
-Vedex currently ships only `FakeAdapter` for deterministic offline tests. A
-production adapter can be supplied externally through the same contract until
-built-in provider support is added.
+Vedex ships two optional SDK-backed adapters. Credentials are read by their
+official SDKs from `OPENAI_API_KEY` and `GEMINI_API_KEY` respectively.
+
+```bash
+uv pip install "vedex[openai]"
+vedex --adapter vedex.models.openai:create_adapter --model your-openai-model --cwd .
+
+uv pip install "vedex[gemini]"
+vedex --adapter vedex.models.gemini:create_adapter --model your-gemini-model --cwd .
+```
+
+The OpenAI adapter uses the Responses API. The Gemini adapter uses the
+Interactions API in stateless mode. Both preserve provider continuation data as
+opaque assistant-message metadata, assemble tool calls inside the adapter, and
+emit only normalized model events. Their SDK packages remain optional; importing
+the base `vedex.models` package does not load either provider.
 
 The interactive command set is intentionally small:
 
@@ -93,7 +107,7 @@ memory and are not durable sessions.
 Vedex requires Python 3.12+ and uses `uv` for local development.
 
 ```bash
-uv sync --dev
+uv sync --all-extras --dev
 uv run pytest
 uv run ruff check .
 uv run ruff format --check .

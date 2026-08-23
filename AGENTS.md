@@ -28,8 +28,8 @@ The runtime is composed of these independent responsibilities:
   responsibility boundary. Keep it cohesive, readable, and easy to test; use
   design clarity rather than an arbitrary size target.
 - **Model layer:** a `ModelAdapter` protocol producing normalized `ModelEvent`
-  values. `FakeAdapter` is the concrete adapter/model for deterministic tests;
-  future providers can be added behind the same protocol.
+  values. `FakeAdapter` provides deterministic tests, while optional real
+  adapters keep their SDKs and configuration behind the same protocol.
 - **Environment layer:** a common environment contract with base, local, and
   Docker implementations.
 - **Tools:** focused read, write, edit, and bash capabilities exposed through
@@ -70,11 +70,11 @@ the Agent must not absorb provider, CLI, environment, or benchmark logic.
 ### Model extensibility
 
 - `ModelAdapter` is the only model boundary.
-- `FakeAdapter` is the current concrete adapter and deterministic fake model.
+- `FakeAdapter` is the deterministic fake model used by offline tests.
 - The adapter contract supports streaming text, optional thinking deltas, tool calls, usage, completion, cancellation, and normalized failure.
-- Provider-specific conversion and SDK details stay inside future adapters.
+- Provider-specific conversion and SDK details stay inside adapters.
 - The base package and FakeAdapter work without network access or a provider account.
-- FakeAdapter passes the shared adapter contract; future adapters must pass the same contract before support is claimed.
+- FakeAdapter and every supported real adapter pass the shared adapter contract.
 - Native function/tool calling is the initial action interface; free-form text action parsing is not part of the target.
 
 ### Environments
