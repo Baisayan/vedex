@@ -91,8 +91,6 @@ class HeadlessEventWriter:
         stdout: TextIO,
         stderr: TextIO,
     ) -> None:
-        if mode not in ("plain", "jsonl"):
-            raise ValueError(f"Unsupported headless output mode: {mode}")
         self._mode = mode
         self._stdout = stdout
         self._stderr = stderr

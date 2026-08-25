@@ -6,7 +6,16 @@ from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..schema import AgentTool, CancellationToken, FatalEnvironmentError, JSONValue
+from ..schema import (
+    AgentTool,
+    CancellationToken,
+    EnvironmentCancelledError,
+    EnvironmentFileError,
+    EnvironmentFileErrorKind,
+    FatalEnvironmentError,
+    JSONValue,
+    WorkspacePathError,
+)
 
 
 class _EnvironmentContract(BaseModel):
@@ -14,12 +23,6 @@ class _EnvironmentContract(BaseModel):
 
 
 type EnvironmentState = Literal["created", "started", "stopping", "stopped"]
-type EnvironmentFileErrorKind = Literal[
-    "not_found",
-    "is_directory",
-    "permission_denied",
-    "io_error",
-]
 
 
 class EnvironmentLimits(_EnvironmentContract):
@@ -72,33 +75,6 @@ class EnvironmentMetadata(_EnvironmentContract):
 
 class EnvironmentStateError(FatalEnvironmentError):
     """Raised when an operation is invalid for the environment lifecycle state."""
-
-
-class EnvironmentCancelledError(RuntimeError):
-    """Raised when a non-command environment operation is cancelled."""
-
-
-class WorkspacePathError(ValueError):
-    def __init__(self, path: str, reason: str) -> None:
-        self.path = path
-        self.reason = reason
-        super().__init__(reason)
-
-
-class EnvironmentFileError(RuntimeError):
-    def __init__(
-        self,
-        *,
-        path: str,
-        operation: Literal["read", "write"],
-        kind: EnvironmentFileErrorKind,
-        detail: str | None = None,
-    ) -> None:
-        self.path = path
-        self.operation = operation
-        self.kind = kind
-        self.detail = detail
-        super().__init__(detail or kind.replace("_", " "))
 
 
 class EnvironmentExportError(RuntimeError):

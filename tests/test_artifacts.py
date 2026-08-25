@@ -5,6 +5,7 @@ import subprocess
 import tarfile
 from io import StringIO
 from pathlib import Path
+from typing import override
 
 import pytest
 from vedex.artifacts import RUN_ARTIFACT_SCHEMA_VERSION, RunArtifact, RunArtifactConfig
@@ -27,6 +28,7 @@ from .conftest import run_async
 
 
 class _MetadataFailureEnvironment(LocalEnvironment):
+    @override
     async def get_metadata(self) -> EnvironmentMetadata:
         raise RuntimeError("metadata unavailable")
 

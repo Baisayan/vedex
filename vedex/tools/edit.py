@@ -1,10 +1,20 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
-from ..environments import Environment, EnvironmentFileError, WorkspacePathError
-from ..schema import AgentTool, AgentToolResult, CancellationToken, JSONValue
-from .base import ToolInputError, _reject_unknown_args, _workspace_path_arg
+from ..schema import (
+    AgentTool,
+    AgentToolResult,
+    CancellationToken,
+    EnvironmentFileError,
+    JSONValue,
+    WorkspacePathError,
+)
+from .base import ToolInputError, reject_unknown_arguments, workspace_path_argument
+
+if TYPE_CHECKING:
+    from ..environments.base import Environment
 
 UTF8_BOM = "\ufeff"
 
@@ -14,8 +24,8 @@ def create_edit_tool(*, environment: Environment) -> AgentTool:
         arguments: Mapping[str, JSONValue],
         signal: CancellationToken | None = None,
     ) -> AgentToolResult:
-        _reject_unknown_args(arguments, {"path", "edits"})
-        path = _workspace_path_arg(arguments, "path", environment=environment)
+        reject_unknown_arguments(arguments, {"path", "edits"})
+        path = workspace_path_argument(arguments, "path", environment=environment)
         edits = _edits_arg(arguments)
 
         try:
@@ -96,13 +106,12 @@ def create_edit_tool(*, environment: Environment) -> AgentTool:
         ),
         prompt_guidelines=(
             "Use edit for precise changes (edits[].oldText must match exactly)",
-            "When changing multiple separate locations in one file, use one edit call with "
-            "multiple entries in edits[] instead of multiple edit calls",
-            "Each edits[].oldText is matched against the original file, not after earlier "
-            "edits are applied. Do not emit overlapping or nested edits. Merge nearby "
-            "changes into one edit.",
-            "Keep edits[].oldText as small as possible while still being unique in the file. "
-            "Do not pad with large unchanged regions.",
+            "When changing multiple locations in one file, use one edit call",
+            "Pass multiple entries in edits[] instead of making multiple edit calls",
+            "Each edits[].oldText matches the original file, not the result of earlier edits.",
+            "Do not emit overlapping or nested edits; merge nearby changes into one edit.",
+            "Keep edits[].oldText as small as possible while still being unique in the file.",
+            "Do not pad edits with large unchanged regions.",
         ),
     )
 
@@ -168,7 +177,7 @@ def _edits_arg(arguments: Mapping[str, JSONValue]) -> list[dict[str, str]]:
         if not isinstance(item, dict):
             raise ToolInputError(f"edits[{index}] must be an object")
         try:
-            _reject_unknown_args(item, {"oldText", "newText"})
+            reject_unknown_arguments(item, {"oldText", "newText"})
         except ToolInputError as exc:
             raise ToolInputError(f"edits[{index}] contains invalid fields: {exc}") from exc
         old_text = item.get("oldText")

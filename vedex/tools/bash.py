@@ -1,20 +1,23 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
-from ..environments import Environment
 from ..schema import AgentTool, AgentToolResult, CancellationToken, JSONValue
 from .base import (
     DEFAULT_MAX_OUTPUT_BYTES,
     DEFAULT_MAX_OUTPUT_LINES,
     ToolInputError,
-    _optional_int_arg,
-    _reject_unknown_args,
-    _str_arg,
     append_status_block,
     format_size,
+    optional_int_argument,
+    reject_unknown_arguments,
+    str_argument,
     truncate_tail,
 )
+
+if TYPE_CHECKING:
+    from ..environments.base import Environment
 
 DEFAULT_TIMEOUT_SECONDS = 120
 MAX_TIMEOUT_SECONDS = 600
@@ -28,9 +31,9 @@ def create_bash_tool(
         arguments: Mapping[str, JSONValue],
         signal: CancellationToken | None = None,
     ) -> AgentToolResult:
-        _reject_unknown_args(arguments, {"command", "timeout"})
-        command = _str_arg(arguments, "command")
-        timeout = _optional_int_arg(arguments, "timeout")
+        reject_unknown_arguments(arguments, {"command", "timeout"})
+        command = str_argument(arguments, "command")
+        timeout = optional_int_argument(arguments, "timeout")
         if timeout is None:
             timeout = DEFAULT_TIMEOUT_SECONDS
         if not 1 <= timeout <= MAX_TIMEOUT_SECONDS:

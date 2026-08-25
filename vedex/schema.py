@@ -19,6 +19,42 @@ class FatalEnvironmentError(RuntimeError):
     """Raised when the active execution environment cannot safely continue."""
 
 
+type EnvironmentFileOperation = Literal["read", "write"]
+type EnvironmentFileErrorKind = Literal[
+    "not_found",
+    "is_directory",
+    "permission_denied",
+    "io_error",
+]
+
+
+class EnvironmentCancelledError(RuntimeError):
+    """Raised when a non-command environment operation is cancelled."""
+
+
+class WorkspacePathError(ValueError):
+    def __init__(self, path: str, reason: str) -> None:
+        self.path = path
+        self.reason = reason
+        super().__init__(reason)
+
+
+class EnvironmentFileError(RuntimeError):
+    def __init__(
+        self,
+        *,
+        path: str,
+        operation: EnvironmentFileOperation,
+        kind: EnvironmentFileErrorKind,
+        detail: str | None = None,
+    ) -> None:
+        self.path = path
+        self.operation = operation
+        self.kind = kind
+        self.detail = detail
+        super().__init__(detail or kind.replace("_", " "))
+
+
 # Tools
 
 

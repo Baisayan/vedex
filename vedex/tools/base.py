@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
+from typing import TYPE_CHECKING
 
-from ..environments import Environment, WorkspacePathError
-from ..schema import AgentTool, JSONValue
+from ..schema import JSONValue, WorkspacePathError
+
+if TYPE_CHECKING:
+    from ..environments.base import Environment
 
 DEFAULT_MAX_OUTPUT_BYTES = 50 * 1024
 DEFAULT_MAX_OUTPUT_LINES = 2_000
@@ -30,23 +33,6 @@ class TruncationResult:
 
     def to_json(self) -> dict[str, JSONValue]:
         return asdict(self)
-
-
-def create_coding_tools(
-    *,
-    environment: Environment,
-) -> list[AgentTool]:
-    from .bash import create_bash_tool
-    from .edit import create_edit_tool
-    from .read import create_read_tool
-    from .write import create_write_tool
-
-    return [
-        create_read_tool(environment=environment),
-        create_write_tool(environment=environment),
-        create_edit_tool(environment=environment),
-        create_bash_tool(environment=environment),
-    ]
 
 
 def format_size(bytes_count: int) -> str:
@@ -194,34 +180,34 @@ def _truncate_string_to_bytes_from_end(text: str, max_bytes: int) -> str:
     return encoded[-max_bytes:].decode(errors="ignore")
 
 
-def _str_arg(arguments: Mapping[str, JSONValue], name: str) -> str:
+def str_argument(arguments: Mapping[str, JSONValue], name: str) -> str:
     value = arguments.get(name)
     if not isinstance(value, str):
         raise ToolInputError(f"{name} must be a string")
     return value
 
 
-def _reject_unknown_args(arguments: Mapping[str, JSONValue], allowed: set[str]) -> None:
+def reject_unknown_arguments(arguments: Mapping[str, JSONValue], allowed: set[str]) -> None:
     unknown = sorted(set(arguments) - allowed)
     if unknown:
         joined = ", ".join(unknown)
         raise ToolInputError(f"Unexpected argument(s): {joined}")
 
 
-def _workspace_path_arg(
+def workspace_path_argument(
     arguments: Mapping[str, JSONValue],
     name: str,
     *,
     environment: Environment,
 ) -> str:
-    path = _str_arg(arguments, name)
+    path = str_argument(arguments, name)
     try:
         return environment.normalize_path(path)
     except WorkspacePathError as exc:
         raise ToolInputError(f"Invalid workspace path {path!r}: {exc.reason}") from exc
 
 
-def _optional_int_arg(arguments: Mapping[str, JSONValue], name: str) -> int | None:
+def optional_int_argument(arguments: Mapping[str, JSONValue], name: str) -> int | None:
     value = arguments.get(name)
     if value is None:
         return None

@@ -16,7 +16,6 @@ from ..schema import (
     CancellationToken,
     JSONValue,
     ToolCall,
-    ToolResultMessage,
     UserMessage,
 )
 from .base import (
@@ -242,7 +241,7 @@ class GeminiAdapter:
             values["generation_config"] = generation_config
         if options.service_tier is not None:
             values["service_tier"] = options.service_tier
-        return cast(interactions.CreateModelInteractionParamsStreaming, values)
+        return cast(interactions.CreateModelInteractionParamsStreaming, cast(object, values))
 
 
 def create_adapter() -> GeminiAdapter:
@@ -289,16 +288,15 @@ def _request_input(request: ModelRequest) -> list[dict[str, JSONValue]]:
             )
             continue
 
-        if isinstance(message, ToolResultMessage):
-            provider_input.append(
-                {
-                    "type": "function_result",
-                    "call_id": message.tool_call_id,
-                    "name": message.name,
-                    "is_error": not message.ok,
-                    "result": [{"type": "text", "text": message.content}],
-                }
-            )
+        provider_input.append(
+            {
+                "type": "function_result",
+                "call_id": message.tool_call_id,
+                "name": message.name,
+                "is_error": not message.ok,
+                "result": [{"type": "text", "text": message.content}],
+            }
+        )
 
     return provider_input
 
@@ -384,7 +382,7 @@ def _completed_event(
             elif step_type == "function_call":
                 arguments = step.get("arguments", {})
                 if isinstance(arguments, str):
-                    arguments = _object(json.loads(arguments or "{}"))
+                    arguments = _object(_json_loads(arguments or "{}"))
                 else:
                     arguments = _object(arguments)
                 tool_calls.append(
@@ -447,7 +445,7 @@ def _completed_event(
 
 
 def _pending_tool_call(call: _PendingCall) -> ToolCall:
-    arguments = _object(json.loads(call.arguments or "{}"))
+    arguments = _object(_json_loads(call.arguments or "{}"))
     return ToolCall(id=call.call_id, name=call.name, arguments=arguments)
 
 
@@ -608,6 +606,10 @@ async def _iter_with_cancellation(
 
 async def _next_stream_event(iterator: AsyncIterator[object]) -> object:
     return await anext(iterator)
+
+
+def _json_loads(text: str) -> object:
+    return cast(object, json.loads(text))
 
 
 def _object(value: object) -> dict[str, JSONValue]:

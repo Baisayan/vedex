@@ -1,15 +1,25 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
-from ..environments import Environment, EnvironmentFileError, WorkspacePathError
-from ..schema import AgentTool, AgentToolResult, CancellationToken, JSONValue
+from ..schema import (
+    AgentTool,
+    AgentToolResult,
+    CancellationToken,
+    EnvironmentFileError,
+    JSONValue,
+    WorkspacePathError,
+)
 from .base import (
     ToolInputError,
-    _reject_unknown_args,
-    _str_arg,
-    _workspace_path_arg,
+    reject_unknown_arguments,
+    str_argument,
+    workspace_path_argument,
 )
+
+if TYPE_CHECKING:
+    from ..environments.base import Environment
 
 
 def create_write_tool(*, environment: Environment) -> AgentTool:
@@ -17,9 +27,9 @@ def create_write_tool(*, environment: Environment) -> AgentTool:
         arguments: Mapping[str, JSONValue],
         signal: CancellationToken | None = None,
     ) -> AgentToolResult:
-        _reject_unknown_args(arguments, {"path", "content"})
-        path = _workspace_path_arg(arguments, "path", environment=environment)
-        content = _str_arg(arguments, "content")
+        reject_unknown_arguments(arguments, {"path", "content"})
+        path = workspace_path_argument(arguments, "path", environment=environment)
+        content = str_argument(arguments, "content")
         encoded = content.encode("utf-8")
 
         try:

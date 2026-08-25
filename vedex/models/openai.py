@@ -16,7 +16,6 @@ from ..schema import (
     CancellationToken,
     JSONValue,
     ToolCall,
-    ToolResultMessage,
     UserMessage,
 )
 from .base import (
@@ -207,7 +206,7 @@ class OpenAIAdapter:
         if self._config.include_reasoning_metadata:
             values["include"] = ["reasoning.encrypted_content"]
         values.update(options)
-        return cast(ResponseCreateParamsStreaming, values)
+        return cast(ResponseCreateParamsStreaming, cast(object, values))
 
 
 def create_adapter() -> OpenAIAdapter:
@@ -244,14 +243,13 @@ def _request_input(request: ModelRequest) -> list[dict[str, JSONValue]]:
             )
             continue
 
-        if isinstance(message, ToolResultMessage):
-            provider_input.append(
-                {
-                    "type": "function_call_output",
-                    "call_id": message.tool_call_id,
-                    "output": message.content,
-                }
-            )
+        provider_input.append(
+            {
+                "type": "function_call_output",
+                "call_id": message.tool_call_id,
+                "output": message.content,
+            }
+        )
 
     return provider_input
 
@@ -293,8 +291,7 @@ def _completed_event(event: Mapping[str, JSONValue]) -> ModelCompletedEvent | Mo
                             content_parts.append(text)
             elif item_type == "function_call":
                 arguments_text = _optional_string(item.get("arguments")) or "{}"
-                arguments_value = json.loads(arguments_text)
-                arguments = _object(arguments_value)
+                arguments = _object(_json_loads(arguments_text))
                 call_id = _optional_string(item.get("call_id")) or _required_string(item, "id")
                 tool_calls.append(
                     ToolCall(
@@ -374,16 +371,8 @@ def _failure_from_exception(error: Exception) -> ModelFailureEvent:
     if not isinstance(status_code, int):
         status_code = None
 
-    code: str | None = None
-    body = getattr(error, "body", None)
-    if isinstance(body, Mapping):
-        raw_code = body.get("code")
-        if not isinstance(raw_code, str):
-            nested = body.get("error")
-            if isinstance(nested, Mapping):
-                raw_code = nested.get("code")
-        if isinstance(raw_code, str):
-            code = raw_code
+    body_candidate: object = getattr(error, "body", None)
+    code = _error_code_from_body(body_candidate)
 
     message = _error_message(error)
     if code is None and "api key" in message.lower():
@@ -391,6 +380,27 @@ def _failure_from_exception(error: Exception) -> ModelFailureEvent:
     if isinstance(error, TimeoutError):
         status_code = 408
     return _failure(code=code, message=message, status_code=status_code)
+
+
+def _error_code_from_body(body: object) -> str | None:
+    entries = _json_object_or_none(body)
+    if entries is None:
+        return None
+    code = _optional_string(entries.get("code"))
+    if code is not None:
+        return code
+    nested = _json_object_or_none(entries.get("error"))
+    if nested is None:
+        return None
+    return _optional_string(nested.get("code"))
+
+
+def _json_object_or_none(value: object) -> dict[str, JSONValue] | None:
+    try:
+        parsed = _JSON_VALUE_ADAPTER.validate_python(value)
+    except ValidationError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 def _failure(*, code: str | None, message: str, status_code: int | None) -> ModelFailureEvent:
@@ -458,6 +468,10 @@ async def _iter_with_cancellation(
 
 async def _next_stream_event(iterator: AsyncIterator[object]) -> object:
     return await anext(iterator)
+
+
+def _json_loads(text: str) -> object:
+    return cast(object, json.loads(text))
 
 
 def _object(value: object) -> dict[str, JSONValue]:

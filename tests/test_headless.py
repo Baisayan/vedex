@@ -5,6 +5,7 @@ import json
 from collections.abc import AsyncIterator
 from io import StringIO
 from pathlib import Path
+from typing import override
 
 import pytest
 from vedex.artifacts import RunStatus
@@ -27,6 +28,7 @@ from .conftest import run_async
 
 
 class _CleanupFailureEnvironment(LocalEnvironment):
+    @override
     async def stop(self) -> None:
         await super().stop()
         raise RuntimeError("cleanup exploded")
@@ -133,7 +135,7 @@ def test_headless_jsonl_keeps_events_on_stdout_and_diagnostics_on_stderr(
         )
     )
 
-    records = [json.loads(line) for line in stdout.getvalue().splitlines()]
+    records: list[dict[str, object]] = [json.loads(line) for line in stdout.getvalue().splitlines()]
     assert result.status == "model_failure"
     assert result.exit_code == HeadlessExitCode.MODEL_FAILURE
     assert records[0] == {"type": "agent_start"}

@@ -654,9 +654,9 @@ def _export_tar_gz(
                     if signal is not None and signal.is_cancelled():
                         raise EnvironmentCancelledError("Workspace export cancelled")
                     if path.is_symlink() and not path.resolve(strict=False).is_relative_to(root):
+                        outside = path.relative_to(root).as_posix()
                         raise EnvironmentExportError(
-                            f"Workspace contains a symlink outside its root: "
-                            f"{path.relative_to(root).as_posix()}"
+                            f"Workspace contains a symlink outside its root: {outside}"
                         )
                     relative = path.relative_to(root).as_posix()
                     info = archive.gettarinfo(str(path), arcname=relative)

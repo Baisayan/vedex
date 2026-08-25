@@ -155,7 +155,6 @@ class Workspace:
 
     def _build_system_prompt(self) -> str:
         return build_system_prompt(
-            cwd=self.cwd,
             tools=self._tools,
             skills=self._skills,
             custom_prompt=self._custom_system_prompt,
@@ -186,7 +185,6 @@ class ReloadSummary:
 
 def build_system_prompt(
     *,
-    cwd: Path,
     tools: Sequence[AgentTool],
     skills: Sequence[Skill],
     custom_prompt: str | None,

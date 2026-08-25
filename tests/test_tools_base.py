@@ -6,13 +6,13 @@ from vedex.schema import AgentTool, JSONValue
 from vedex.tools import create_coding_tools
 from vedex.tools.base import (
     ToolInputError,
-    _optional_int_arg,
-    _str_arg,
-    _workspace_path_arg,
     append_status_block,
     format_size,
+    optional_int_argument,
+    str_argument,
     truncate_head,
     truncate_tail,
+    workspace_path_argument,
 )
 
 from .conftest import run_async
@@ -73,10 +73,10 @@ def test_status_and_head_tail_truncation_cover_lines_bytes_and_large_single_line
 def test_tool_argument_helpers_validate_types_and_resolve_paths(
     local_environment: LocalEnvironment,
 ) -> None:
-    assert _str_arg({"name": "value"}, "name") == "value"
-    assert _optional_int_arg({"value": 2}, "value") == 2
+    assert str_argument({"name": "value"}, "name") == "value"
+    assert optional_int_argument({"value": 2}, "value") == 2
     assert (
-        _workspace_path_arg(
+        workspace_path_argument(
             {"path": "nested/../child.txt"},
             "path",
             environment=local_environment,
@@ -85,9 +85,9 @@ def test_tool_argument_helpers_validate_types_and_resolve_paths(
     )
 
     for callback in (
-        lambda: _str_arg({}, "name"),
-        lambda: _optional_int_arg({"value": "two"}, "value"),
-        lambda: _optional_int_arg({"value": True}, "value"),
+        lambda: str_argument({}, "name"),
+        lambda: optional_int_argument({"value": "two"}, "value"),
+        lambda: optional_int_argument({"value": True}, "value"),
     ):
         with pytest.raises(ToolInputError):
             callback()

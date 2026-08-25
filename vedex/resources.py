@@ -48,7 +48,7 @@ class ResourcePaths:
 
     @property
     def skills_dirs(self) -> tuple[Path, ...]:
-        paths = self._paths()
+        paths = self.vedex_paths()
         directories = [self.skills_dir]
         if self.cwd is not None:
             directories.append(paths.project_skills_dir(self.cwd))
@@ -56,13 +56,13 @@ class ResourcePaths:
 
     @property
     def prompts_dirs(self) -> tuple[Path, ...]:
-        paths = self._paths()
+        paths = self.vedex_paths()
         directories = [self.prompts_dir]
         if self.cwd is not None:
             directories.append(paths.project_prompts_dir(self.cwd))
         return tuple(_dedupe_paths(directories))
 
-    def _paths(self) -> VedexPaths:
+    def vedex_paths(self) -> VedexPaths:
         return self.paths or VedexPaths(home=self.root)
 
 
@@ -256,7 +256,7 @@ def _context_file_candidates(paths: ResourcePaths) -> tuple[Path, ...]:
         cwd = paths.cwd.expanduser().resolve()
         project_root = _find_project_root(cwd)
         candidates.extend(_project_context_candidates(project_root, cwd))
-        vedex_paths = paths._paths()
+        vedex_paths = paths.vedex_paths()
         candidates.extend(
             [
                 vedex_paths.project_vedex_dir(cwd) / "AGENTS.md",

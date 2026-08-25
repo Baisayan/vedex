@@ -29,7 +29,6 @@ def test_default_and_custom_system_prompts_include_expected_context(tmp_path: Pa
     context = ProjectContextFile(path="C:/project/<AGENTS>.md", content="follow <rules>")
 
     prompt = build_system_prompt(
-        cwd=tmp_path,
         tools=[read_tool],
         skills=[skill],
         custom_prompt=None,
@@ -38,7 +37,6 @@ def test_default_and_custom_system_prompts_include_expected_context(tmp_path: Pa
         current_date=date(2026, 7, 28),
     )
     custom = build_system_prompt(
-        cwd=tmp_path,
         tools=[],
         skills=[],
         custom_prompt="custom",

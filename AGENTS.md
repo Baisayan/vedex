@@ -1,7 +1,6 @@
 # Vedex Agent Instructions
 
-This is the target specification for Vedex. It defines the
-features, architecture, boundaries, quality requirements, and benchmark goals.
+This is the target specification for Vedex. It defines the features, architecture, boundaries, quality requirements, and benchmark goals.
 
 ## Goal
 
@@ -13,10 +12,6 @@ Vedex is a terminal coding agent. It should combine:
 - Local and isolated execution environments.
 - Interactive streaming and reliable headless execution.
 - Strong automated tests and reproducible benchmark integrations.
-
-The design takes inspiration from Tau's separation of product concerns and
-mini-SWE-agent's small agent loop and benchmark discipline, while keeping Vedex
-focused and extensible.
 
 ## Architecture
 
@@ -46,21 +41,19 @@ the Agent must not absorb provider, CLI, environment, or benchmark logic.
 
 ### User experience
 
-- Read, write, exact-edit, and bounded foreground bash tools.
-- Incremental assistant/tool event streaming.
+- Read, write, edit, and bash tools.
+- Assistant/tool event streaming.
 - Simple blocking terminal interaction with Rich rendering.
 - Headless execution for scripts, CI, and benchmark runners.
 - Project instruction discovery.
 - Skills and prompt templates.
 - Context inspection, resource reload, and in-memory reset interactions.
 - Stable structured output and exit statuses in headless mode.
-- No large TUI, GUI, web dashboard, plugin marketplace, or approval system.
+- No TUI, GUI, web dashboard, plugin marketplace, or approval system.
 
 ### Agent behavior
 
-- Conversation history exists only in process memory.
-- The loop requests a model response, forwards deltas, accepts a completed
-  assistant message, executes tool calls, appends tool results, and continues.
+- The loop requests a model response, forwards deltas, accepts a completed assistant message, executes tool calls, appends tool results, and continues.
 - Tool calls execute sequentially by default for predictable file/shell changes.
 - Completion, model failure, tool failure, cancellation, timeout, context, and
   step/turn limits have explicit terminal results.
@@ -94,23 +87,6 @@ the Agent must not absorb provider, CLI, environment, or benchmark logic.
 - Resource loading and system-prompt construction remain separate from Agent execution and message memory.
 - Required resources fail clearly; optional unreadable resources produce a concise warning.
 
-### State policy
-
-- No durable interactive sessions.
-- No session IDs, resume behavior, session database, or conversation log.
-- A new process always starts with empty history.
-- Context trimming is an in-memory concern, not replay or persistence.
-- Headless/benchmark output files are explicit run artifacts, not sessions, and are never loaded back as Agent memory.
-
-### Benchmark targets
-
-- SWE-bench is the first benchmark target and must use its official evaluator.
-- ProgramBench is a later target with its official workspace/evaluation format.
-- Benchmark runners use the shared headless Agent and environment contracts.
-- No custom Vedex scoring framework is required.
-- Report exact model/configuration, task selection, environment, limits, completed/failed/timed-out counts, and official evaluator results.
-- Do not advertise a benchmark score before its official evaluator completes; unmeasured targets remain clearly labeled.
-
 ## Core contracts
 
 ### ModelAdapter
@@ -125,9 +101,7 @@ Normalized model events cover:
 - Completed assistant message with assembled tool calls and usage.
 - Normalized failure or cancellation.
 
-Messages may carry opaque JSON-serializable provider metadata when an adapter
-needs to preserve provider-specific continuation data. The Agent never
-interprets this metadata.
+Messages may carry opaque JSON-serializable provider metadata when an adapter needs to preserve provider-specific continuation data. The Agent never interprets this metadata.
 
 ### AgentEvent
 
@@ -160,11 +134,8 @@ After every feature or meaningful refactor, complete all of the following:
 - Run the full Pytest suite.
 - Run Ruff lint and formatting verification.
 - Run strict Mypy for the package and tests.
-- Run the relevant mocked or real integration check for CLI, adapter,
-  environment, or benchmark changes.
-- Update affected documentation and inspect the final diff.
-- Commit each completed end-to-end feature or meaningful milestone after its
-  tests and quality checks pass; keep commits focused and coherent.
+- Run the relevant mocked or real integration check for CLI, adapter, environment, or benchmark changes.
+- Commit each completed end-to-end feature or meaningful milestone after its tests and quality checks pass; keep commits focused and coherent. Don't commit work in progress or incomplete features or small diffs.
 
 The test suite must cover:
 
@@ -176,24 +147,16 @@ The test suite must cover:
 - Local environment behavior and Docker parity/cleanup.
 - Interactive resource behavior and ephemeral state.
 - Headless output and stable result/exit behavior.
-- Benchmark serialization and runners using tiny fake fixtures without live API
-  calls.
+- Benchmark serialization and runners using tiny fake fixtures without live API calls.
 
 Live provider tests are optional. Normal tests must not require network access,
 paid usage, or a particular provider.
 
 Boundary failures must be explicit: malformed model data, tool errors, provider
 errors, stream interruption, cancellation, timeout, context overflow, invalid
-configuration, and environment cleanup failures must produce a clear result or
-error. Do not silently continue after a terminal failure or report success
-after one.
+configuration, and environment cleanup failures must produce a clear result or error. Do not silently continue after a terminal failure or report success after one.
 
-Keep strict typing at all public boundaries. Narrow untyped JSON/SDK/subprocess
-data immediately and use typed protocols/models for messages, tools, events,
-adapters, and environments.
-
-Documentation must describe implemented behavior and measured benchmark results
-only. CLI help, README, tests, and this file should remain consistent.
+Keep strict typing at all public boundaries. Narrow untyped JSON/SDK/subprocess data immediately and use typed protocols/models for messages, tools, events, adapters, and environments.
 
 ## Reference projects
 
@@ -201,7 +164,5 @@ Keep only these external references in project documentation:
 
 - [SWE-bench repository](https://github.com/SWE-bench/SWE-bench)
 - [SWE-bench website](https://www.swebench.com/)
-- [ProgramBench repository](https://github.com/facebookresearch/programbench)
-- [ProgramBench website](https://programbench.com/)
 - [Tau repository](https://github.com/huggingface/tau)
 - [mini-SWE-agent repository](https://github.com/SWE-agent/mini-swe-agent)

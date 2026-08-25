@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import importlib
+import io
 import os
+import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -31,10 +33,12 @@ def _is_utf8_encoding(encoding: str | None) -> bool:
 
 def _force_utf8_streams() -> None:
     for stream in (sys.stdout, sys.stderr):
-        if _is_utf8_encoding(getattr(stream, "encoding", None)):
+        if not isinstance(stream, io.TextIOWrapper):
             continue
-        with contextlib.suppress(AttributeError, ValueError):
-            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+        if _is_utf8_encoding(stream.encoding):
+            continue
+        with contextlib.suppress(ValueError):
+            stream.reconfigure(encoding="utf-8", errors="replace")
 
 
 _force_utf8_streams()
@@ -324,7 +328,11 @@ def _format_reload_summary(summary: ReloadSummary) -> str:
 
 
 def _clear_screen() -> None:
-    os.system("cls" if os.name == "nt" else "clear")
+    subprocess.run(
+        "cls" if os.name == "nt" else "clear",
+        shell=True,
+        check=False,
+    )
 
 
 _HELP_TEXT = """Commands:

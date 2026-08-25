@@ -19,7 +19,15 @@ from time import monotonic
 from typing import Literal, Protocol, Self, cast
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from ..schema import AgentTool, CancellationToken, JSONValue
 from .base import (
@@ -43,6 +51,7 @@ type DockerWorkspaceMode = Literal["image", "copy", "mount"]
 type DockerPullPolicy = Literal["always", "missing", "never"]
 
 _CONTAINER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+_JSON_OBJECT_ADAPTER: TypeAdapter[dict[str, JSONValue]] = TypeAdapter(dict[str, JSONValue])
 _GIT_TIMEOUT_SECONDS = 30.0
 _FILE_NOT_FOUND = 44
 _FILE_IS_DIRECTORY = 45
@@ -956,9 +965,9 @@ class DockerEnvironment:
         }
         kind = kinds.get(result.returncode)
         if kind is None:
+            detail = _cli_error_detail(result)
             raise EnvironmentStateError(
-                f"Container file helper failed with exit code {result.returncode}: "
-                f"{_cli_error_detail(result)}"
+                f"Container file helper failed with exit code {result.returncode}: {detail}"
             )
         detail = _cli_error_detail(result) if result.stderr else None
         raise EnvironmentFileError(
@@ -1186,14 +1195,15 @@ async def _terminate_process(process: asyncio.subprocess.Process) -> None:
         await asyncio.wait_for(process.wait(), timeout=5.0)
 
 
-def _json_object(raw: bytes, description: str) -> dict[str, object]:
+def _json_object(raw: bytes, description: str) -> dict[str, JSONValue]:
     try:
-        value = json.loads(raw)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return _JSON_OBJECT_ADAPTER.validate_python(_json_loads(raw))
+    except (UnicodeDecodeError, json.JSONDecodeError, ValidationError) as exc:
         raise EnvironmentStateError(f"Invalid JSON returned by {description}") from exc
-    if not isinstance(value, dict):
-        raise EnvironmentStateError(f"Invalid object returned by {description}")
-    return cast(dict[str, object], value)
+
+
+def _json_loads(raw: bytes) -> object:
+    return cast(object, json.loads(raw))
 
 
 def _cli_error_detail(result: DockerCLIResult) -> str:

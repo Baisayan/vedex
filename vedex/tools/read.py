@@ -1,19 +1,29 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
-from ..environments import Environment, EnvironmentFileError, WorkspacePathError
-from ..schema import AgentTool, AgentToolResult, CancellationToken, JSONValue
+from ..schema import (
+    AgentTool,
+    AgentToolResult,
+    CancellationToken,
+    EnvironmentFileError,
+    JSONValue,
+    WorkspacePathError,
+)
 from .base import (
     DEFAULT_MAX_OUTPUT_BYTES,
     DEFAULT_MAX_OUTPUT_LINES,
     ToolInputError,
-    _optional_int_arg,
-    _reject_unknown_args,
-    _workspace_path_arg,
     format_size,
+    optional_int_argument,
+    reject_unknown_arguments,
     truncate_head,
+    workspace_path_argument,
 )
+
+if TYPE_CHECKING:
+    from ..environments.base import Environment
 
 
 def create_read_tool(*, environment: Environment) -> AgentTool:
@@ -21,10 +31,10 @@ def create_read_tool(*, environment: Environment) -> AgentTool:
         arguments: Mapping[str, JSONValue],
         signal: CancellationToken | None = None,
     ) -> AgentToolResult:
-        _reject_unknown_args(arguments, {"path", "offset", "limit"})
-        path = _workspace_path_arg(arguments, "path", environment=environment)
-        offset = _optional_int_arg(arguments, "offset")
-        limit = _optional_int_arg(arguments, "limit")
+        reject_unknown_arguments(arguments, {"path", "offset", "limit"})
+        path = workspace_path_argument(arguments, "path", environment=environment)
+        offset = optional_int_argument(arguments, "offset")
+        limit = optional_int_argument(arguments, "limit")
 
         if offset is None:
             offset = 1

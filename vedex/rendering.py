@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from typing import Any
+from collections.abc import Mapping
 
 from rich.console import Console
 from rich.text import Text
@@ -10,6 +10,7 @@ from .schema import (
     AgentEndEvent,
     AgentEvent,
     ErrorEvent,
+    JSONValue,
     MessageDeltaEvent,
     MessageEndEvent,
     MessageStartEvent,
@@ -143,15 +144,19 @@ def format_tool_call_block(tool_call: ToolCall) -> str:
     return f"→ {name}"
 
 
-def _read_line_suffix(arguments: dict[str, Any]) -> str:
-    offset = arguments.get("offset")
-    limit = arguments.get("limit")
+def _read_line_suffix(arguments: Mapping[str, JSONValue]) -> str:
+    offset = _positive_int(arguments.get("offset"))
+    limit = _positive_int(arguments.get("limit"))
     if offset is None and limit is None:
         return ""
-    start = 1 if offset is None else max(1, int(offset))
+    start = 1 if offset is None else max(1, offset)
     if limit is None:
         return f":{start}-"
-    return f":{start}-{start + max(1, int(limit)) - 1}"
+    return f":{start}-{start + max(1, limit) - 1}"
+
+
+def _positive_int(value: JSONValue | None) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def _preview_text(text: str, *, max_lines: int) -> str:

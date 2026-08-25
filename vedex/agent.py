@@ -117,6 +117,16 @@ class _ToolBatchState:
     message: str | None = None
 
 
+_SUPPORTED_MODEL_EVENT_TYPES = (
+    ModelStartEvent,
+    ModelTextDeltaEvent,
+    ModelThinkingDeltaEvent,
+    ModelCompletedEvent,
+    ModelFailureEvent,
+    ModelCancelledEvent,
+)
+
+
 class Agent:
     """Provider-neutral in-memory coordinator for one conversation."""
 
@@ -352,6 +362,12 @@ class Agent:
                 state.cancellation_message = "Agent run cancelled"
                 return
 
+            if type(event) not in _SUPPORTED_MODEL_EVENT_TYPES:
+                state.malformed_message = (
+                    f"Model stream emitted an unsupported event: {type(event).__name__}"
+                )
+                return
+
             if isinstance(event, ModelStartEvent):
                 if state.started:
                     state.malformed_message = "Model stream emitted more than one response start"
@@ -380,14 +396,9 @@ class Agent:
             elif isinstance(event, ModelFailureEvent):
                 state.terminal = True
                 state.failure = event
-            elif isinstance(event, ModelCancelledEvent):
+            else:
                 state.terminal = True
                 state.cancellation_message = event.message
-            else:
-                state.malformed_message = (
-                    f"Model stream emitted an unsupported event: {type(event).__name__}"
-                )
-                return
 
         if not state.terminal:
             if cancellation.is_cancelled():
