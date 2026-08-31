@@ -31,11 +31,9 @@ The runtime is composed of these independent responsibilities:
   the active environment.
 - **Rendering:** consumes normalized `AgentEvent` values and knows nothing about
   provider response formats.
-- **Benchmarks:** thin runners that invoke the same headless Agent path and
-  produce official submission artifacts.
+- **Benchmarks:** thin runners that invoke the same headless Agent path and produce official submission artifacts.
 
-Vedex remains one distributable Python package. Components have clear ownership;
-the Agent must not absorb provider, CLI, environment, or benchmark logic.
+Vedex remains one distributable Python package. Components have clear ownership; the Agent must not absorb provider, CLI, environment, or benchmark logic.
 
 ## Features
 
@@ -133,7 +131,7 @@ After every feature or meaningful refactor, complete all of the following:
 - Run focused Pytest tests while developing.
 - Run the full Pytest suite.
 - Run Ruff lint and formatting verification.
-- Run strict Mypy for the package and tests.
+- Run BasedPyright for the package and tests using the checked-in project configuration.
 - Run the relevant mocked or real integration check for CLI, adapter, environment, or benchmark changes.
 - Commit each completed end-to-end feature or meaningful milestone after its tests and quality checks pass; keep commits focused and coherent. Don't commit work in progress or incomplete features or small diffs.
 
