@@ -1,1 +1,0 @@
-"""Vedex test suite."""
