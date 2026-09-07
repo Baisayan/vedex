@@ -5,25 +5,16 @@ build-backend = "hatchling.build"
 [project]
 name = "vedex"
 version = "0.1.0"
-description = "A minimal, provider-neutral terminal coding-agent harness"
+description = "A minimal terminal coding-agent"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
+    "litellm>=1.100.0",
     "pydantic>=2.13.4",
-    "rich>=15.0.0",
     "typer>=0.27.0",
 ]
-
-[project.optional-dependencies]
-openai = ["openai>=3.3.1,<4"]
-gemini = ["google-genai>=2.19.0,<3"]
-
-[project.urls]
-Documentation = "https://twotimespi.dev"
-Repository = "https://github.com/Baisayan/vedex"
-Issues = "https://github.com/Baisayan/vedex/issues"
 
 [project.scripts]
 vedex = "vedex.cli:app"
@@ -31,8 +22,6 @@ vedex = "vedex.cli:app"
 [dependency-groups]
 dev = [
     "basedpyright>=1.39.10",
-    "google-genai>=2.19.0,<3",
-    "openai>=3.3.1,<4",
     "pytest>=8.0",
     "ruff>=0.5",
 ]

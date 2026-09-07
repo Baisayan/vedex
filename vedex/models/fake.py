@@ -1,53 +1,62 @@
+"""A deterministic model for local development and integration checks."""
+
 from __future__ import annotations
 
+import copy
 from collections import deque
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import Iterable
+from typing import Any
 
-from ..schema import CancellationToken
-from .base import (
-    ModelCancelledEvent,
-    ModelEvent,
-    ModelFailureEvent,
-    ModelRequest,
+from . import (
+    Message,
+    Observation,
+    format_message,
+    format_observation_messages,
+    parse_native_tool_calls,
 )
 
 
-class FakeAdapter:
-    """Deterministic adapter that replays scripted normalized event streams."""
-
-    def __init__(self, streams: Iterable[Iterable[ModelEvent]] = ()) -> None:
-        self._streams = deque(tuple(stream) for stream in streams)
-        self.requests: list[ModelRequest] = []
-
-    @property
-    def remaining_streams(self) -> int:
-        return len(self._streams)
-
-    def stream(
+class FakeModel:
+    def __init__(
         self,
-        request: ModelRequest,
+        responses: Iterable[Message],
         *,
-        signal: CancellationToken | None = None,
-    ) -> AsyncIterator[ModelEvent]:
-        self.requests.append(request.model_copy(deep=True))
-        scripted = self._streams.popleft() if self._streams else None
+        context_window_tokens: int | None = None,
+        model_name: str = "fake",
+    ) -> None:
+        self._responses = deque(copy.deepcopy(list(responses)))
+        self.requests: list[list[Message]] = []
+        self.context_window_tokens = context_window_tokens
+        self.model_name = model_name
 
-        async def replay() -> AsyncIterator[ModelEvent]:
-            if signal is not None and signal.is_cancelled():
-                yield ModelCancelledEvent()
-                return
+    async def query(self, messages: list[Message]) -> Message:
+        self.requests.append(copy.deepcopy(messages))
+        if not self._responses:
+            raise RuntimeError("FakeModel has no response left")
+        response = copy.deepcopy(self._responses.popleft())
+        extra = response.setdefault("extra", {})
+        if "actions" not in extra:
+            extra["actions"] = parse_native_tool_calls(response.get("tool_calls", []))
+        return response
 
-            if scripted is None:
-                yield ModelFailureEvent(message="FakeAdapter has no scripted response")
-                return
+    def format_message(self, role: str, content: str, **kwargs: Any) -> Message:
+        return format_message(role, content, **kwargs)
 
-            for event in scripted:
-                if signal is not None and signal.is_cancelled():
-                    yield ModelCancelledEvent()
-                    return
-                yield event
+    def format_observation_messages(
+        self,
+        message: Message,
+        outputs: list[Observation],
+        template_vars: Any = None,
+        **kwargs: Any,
+    ) -> list[Message]:
+        return format_observation_messages(message, outputs, template_vars, **kwargs)
 
-        return replay()
+    def serialize(self) -> dict[str, Any]:
+        return {
+            "info": {
+                "config": {"model": self.model_name, "model_type": "fake"},
+            }
+        }
 
 
-__all__ = ["FakeAdapter"]
+__all__ = ["FakeModel"]
