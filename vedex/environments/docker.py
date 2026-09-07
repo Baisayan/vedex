@@ -1,82 +1,85 @@
-"""Run Bash commands in a Docker or Podman container."""
-
-from __future__ import annotations
-
-import asyncio
 import logging
 import os
+import platform
 import shlex
 import subprocess
 import uuid
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+
+from vedex.exceptions import Submitted
+from vedex.utils.serialize import recursive_merge
 
 
 class DockerEnvironmentConfig(BaseModel):
     image: str
     cwd: str = "/"
-    env: dict[str, str] = Field(default_factory=dict)
-    forward_env: list[str] = Field(default_factory=list)
-    timeout: float = 30.0
-    executable: str = Field(default_factory=lambda: os.getenv("MSWEA_DOCKER_EXECUTABLE", "docker"))
-    run_args: list[str] = Field(default_factory=lambda: ["--rm"])
+    """Working directory in which to execute commands."""
+    env: dict[str, str] = {}
+    """Environment variables to set in the container."""
+    forward_env: list[str] = []
+    """Environment variables to forward to the container.
+    Variables are only forwarded if they are set in the host environment.
+    In case of conflict with `env`, the `env` variables take precedence.
+    """
+    timeout: int = 30
+    """Timeout for executing commands in the container."""
+    executable: str = os.getenv("MSWEA_DOCKER_EXECUTABLE", "docker")
+    """Path to the docker/container executable."""
+    run_args: list[str] = ["--rm"]
+    """Additional arguments to pass to the docker/container executable.
+    Default is ["--rm"], which removes the container after it exits.
+    """
     container_timeout: str = "2h"
-    pull_timeout: float = 120.0
-    interpreter: list[str] = Field(default_factory=lambda: ["bash", "-lc"])
+    """Max duration to keep container running. Uses the same format as the sleep command."""
+    pull_timeout: int = 120
+    """Timeout in seconds for pulling images."""
+    interpreter: list[str] = ["bash", "-lc"]
+    """Interpreter to use to execute commands. Default is ["bash", "-lc"].
+    The actual command will be appended as argument to this. Override this to e.g., modify shell flags
+    (e.g., to remove the `-l` flag to disable login shell) or to use python instead of bash to interpret commands.
+    """
 
 
 class DockerEnvironment:
     def __init__(
         self,
         *,
-        config_class: type[DockerEnvironmentConfig] = DockerEnvironmentConfig,
+        config_class: type = DockerEnvironmentConfig,
         logger: logging.Logger | None = None,
-        **kwargs: Any,
-    ) -> None:
-        self.logger = logger or logging.getLogger("vedex.environment")
+        **kwargs,
+    ):
+        """This class executes bash commands in a Docker container using direct docker commands.
+        See `DockerEnvironmentConfig` for keyword arguments.
+        """
+        self.logger = logger or logging.getLogger("minisweagent.environment")
         self.container_id: str | None = None
         self.config = config_class(**kwargs)
         self._start_container()
 
-    async def execute(
-        self,
-        action: dict[str, Any],
-        cwd: str = "",
-        *,
-        timeout: float | None = None,
-    ) -> dict[str, Any]:
-        try:
-            command = action.get("command", "")
-            if not isinstance(command, str):
-                raise ValueError("Bash action command must be a string")
-            if self.container_id is None:
-                raise RuntimeError("Docker container is not running")
-            workdir = cwd or self.config.cwd
-            limit = timeout if timeout is not None else self.config.timeout
-            result = await asyncio.to_thread(self._run_command, command, workdir, limit)
-            return _result(result)
-        except Exception as exc:
-            return _error(exc)
+    def get_template_vars(self, **kwargs) -> dict[str, Any]:
+        return recursive_merge(self.config.model_dump(), platform.uname()._asdict(), kwargs)
 
-    def serialize(self) -> dict[str, Any]:
+    def serialize(self) -> dict:
         return {
             "info": {
                 "config": {
                     "environment": self.config.model_dump(mode="json"),
-                    "environment_type": f"{type(self).__module__}.{type(self).__name__}",
+                    "environment_type": f"{self.__class__.__module__}.{self.__class__.__name__}",
                 }
             }
         }
 
-    def _start_container(self) -> None:
-        name = f"vedex-{uuid.uuid4().hex[:8]}"
-        command = [
+    def _start_container(self):
+        """Start the Docker container and return the container ID."""
+        container_name = f"minisweagent-{uuid.uuid4().hex[:8]}"
+        cmd = [
             self.config.executable,
             "run",
             "-d",
             "--name",
-            name,
+            container_name,
             "-w",
             self.config.cwd,
             *self.config.run_args,
@@ -84,75 +87,75 @@ class DockerEnvironment:
             "sleep",
             self.config.container_timeout,
         ]
-        self.logger.debug("Starting container with command: %s", shlex.join(command))
+        self.logger.debug(f"Starting container with command: {shlex.join(cmd)}")
         result = subprocess.run(
-            command,
+            cmd,
             capture_output=True,
             text=True,
-            timeout=self.config.pull_timeout,
+            timeout=self.config.pull_timeout,  # docker pull might take a while
             check=True,
         )
+        self.logger.info(f"Started container {container_name} with ID {result.stdout.strip()}")
         self.container_id = result.stdout.strip()
-        self.logger.info("Started container %s", name)
 
-    def _run_command(
-        self,
-        command: str,
-        cwd: str,
-        timeout: float,
-    ) -> subprocess.CompletedProcess[str]:
-        if self.container_id is None:
-            raise RuntimeError("Docker container is not running")
-        docker_command = [self.config.executable, "exec", "-w", cwd]
+    def execute(self, action: dict, cwd: str = "", *, timeout: int | None = None) -> dict[str, Any]:
+        """Execute a command in the Docker container and return the result as a dict."""
+        command = action.get("command", "")
+        cwd = cwd or self.config.cwd
+        assert self.container_id, "Container not started"
+
+        cmd = [self.config.executable, "exec", "-w", cwd]
         for key in self.config.forward_env:
             if (value := os.getenv(key)) is not None:
-                docker_command.extend(["-e", f"{key}={value}"])
+                cmd.extend(["-e", f"{key}={value}"])
         for key, value in self.config.env.items():
-            docker_command.extend(["-e", f"{key}={value}"])
-        docker_command.extend([self.container_id, *self.config.interpreter, command])
-        return subprocess.run(
-            docker_command,
-            text=True,
-            timeout=timeout,
-            encoding="utf-8",
-            errors="replace",
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-        )
+            cmd.extend(["-e", f"{key}={value}"])
+        cmd.extend([self.container_id, *self.config.interpreter, command])
 
-    def cleanup(self) -> None:
-        if self.container_id is None:
-            return
-        container_id = self.container_id
-        self.container_id = None
-        subprocess.Popen(
-            [self.config.executable, "rm", "--force", container_id],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        try:
+            result = subprocess.run(
+                cmd,
+                text=True,
+                timeout=timeout or self.config.timeout,
+                encoding="utf-8",
+                errors="replace",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )
+            output = {"output": result.stdout, "returncode": result.returncode, "exception_info": ""}
+        except Exception as e:
+            raw_output = getattr(e, "output", None)
+            raw_output = (
+                raw_output.decode("utf-8", errors="replace") if isinstance(raw_output, bytes) else (raw_output or "")
+            )
+            output = {
+                "output": raw_output,
+                "returncode": -1,
+                "exception_info": f"An error occurred while executing the command: {e}",
+                "extra": {"exception_type": type(e).__name__, "exception": str(e)},
+            }
+        self._check_finished(output)
+        return output
 
-    def __del__(self) -> None:
+    def _check_finished(self, output: dict):
+        """Raises Submitted if the output indicates task completion."""
+        lines = output.get("output", "").lstrip().splitlines(keepends=True)
+        if lines and lines[0].strip() == "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT" and output["returncode"] == 0:
+            submission = "".join(lines[1:])
+            raise Submitted(
+                {
+                    "role": "exit",
+                    "content": submission,
+                    "extra": {"exit_status": "Submitted", "submission": submission},
+                }
+            )
+
+    def cleanup(self):
+        """Stop and remove the Docker container."""
+        if getattr(self, "container_id", None) is not None:  # if init fails early, container_id might not be set
+            cmd = f"(timeout 60 {self.config.executable} stop {self.container_id} || {self.config.executable} rm -f {self.container_id}) >/dev/null 2>&1 &"
+            subprocess.Popen(cmd, shell=True)
+
+    def __del__(self):
+        """Cleanup container when object is destroyed."""
         self.cleanup()
-
-
-def _result(result: subprocess.CompletedProcess[str]) -> dict[str, Any]:
-    return {
-        "output": result.stdout or "",
-        "returncode": result.returncode,
-        "exception_info": "",
-    }
-
-
-def _error(error: Exception) -> dict[str, Any]:
-    raw_output = getattr(error, "output", "")
-    if isinstance(raw_output, bytes):
-        raw_output = raw_output.decode("utf-8", errors="replace")
-    return {
-        "output": raw_output or "",
-        "returncode": -1,
-        "exception_info": f"An error occurred while executing the command: {error}",
-        "extra": {"exception_type": type(error).__name__, "exception": str(error)},
-    }
-
-
-__all__ = ["DockerEnvironment", "DockerEnvironmentConfig"]

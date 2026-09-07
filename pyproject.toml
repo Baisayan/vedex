@@ -16,9 +16,6 @@ dependencies = [
     "typer>=0.27.0",
 ]
 
-[project.scripts]
-vedex = "vedex.cli:app"
-
 [dependency-groups]
 dev = [
     "basedpyright>=1.39.10",
