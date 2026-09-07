@@ -12,7 +12,7 @@ from rich.console import Console
 
 from vedex import global_config_dir
 from vedex.agents import get_agent
-from vedex.agents.utils.prompt_user import _multiline_prompt
+from vedex.agents.interactive import _multiline_prompt
 from vedex.config import builtin_config_dir, get_config_from_spec
 from vedex.environments import get_environment
 from vedex.models import get_model

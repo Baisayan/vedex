@@ -6,8 +6,8 @@ import importlib
 from vedex import Agent, Environment, Model
 
 _AGENT_MAPPING = {
-    "default": "vedex.agents.default.DefaultAgent",
-    "interactive": "vedex.agents.interactive.InteractiveAgent",
+    "default": "vedex.agents.agent.DefaultAgent",
+    "interactive": "vedex.agents.agent.InteractiveAgent",
 }
 
 
@@ -19,7 +19,7 @@ def get_agent_class(spec: str) -> type[Agent]:
         return getattr(module, class_name)
     except (ValueError, ImportError, AttributeError):
         msg = f"Unknown agent type: {spec} (resolved to {full_path}, available: {_AGENT_MAPPING})"
-        raise ValueError(msg)
+        raise ValueError(msg) from None
 
 
 def get_agent(model: Model, env: Environment, config: dict, *, default_type: str = "") -> Agent:

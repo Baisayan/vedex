@@ -1,6 +1,6 @@
 """Shared agent utilities for benchmark runners."""
 
-from vedex.agents.default import DefaultAgent
+from vedex.agents.agent import DefaultAgent
 from vedex.run.benchmarks.utils.batch_progress import RunBatchProgressManager
 
 
