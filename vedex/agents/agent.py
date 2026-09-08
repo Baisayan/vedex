@@ -14,7 +14,7 @@ from vedex.exceptions import (
     LimitsExceeded,
     TimeExceeded,
 )
-from vedex.utils.serialize import recursive_merge
+from vedex.serialize import recursive_merge
 
 
 class AgentConfig(BaseModel):

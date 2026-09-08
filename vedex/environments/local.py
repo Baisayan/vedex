@@ -7,7 +7,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from vedex.exceptions import Submitted
-from vedex.utils.serialize import recursive_merge
+from vedex.serialize import recursive_merge
 
 
 class LocalEnvironmentConfig(BaseModel):
@@ -18,20 +18,26 @@ class LocalEnvironmentConfig(BaseModel):
 
 class LocalEnvironment:
     def __init__(self, *, config_class: type = LocalEnvironmentConfig, **kwargs):
-        """This class executes bash commands directly on the local machine."""
         self.config = config_class(**kwargs)
 
     def execute(self, action: dict, cwd: str = "", *, timeout: int | None = None) -> dict[str, Any]:
-        """Execute a command in the local environment and return the result as a dict."""
         command = action.get("command", "")
         cwd = cwd or self.config.cwd or os.getcwd()
         try:
-            result = _run(command, cwd, os.environ | self.config.env, timeout or self.config.timeout)
-            output = {"output": result.stdout, "returncode": result.returncode, "exception_info": ""}
+            result = _run(
+                command, cwd, os.environ | self.config.env, timeout or self.config.timeout
+            )
+            output = {
+                "output": result.stdout,
+                "returncode": result.returncode,
+                "exception_info": "",
+            }
         except Exception as e:
             raw_output = getattr(e, "output", None)
             raw_output = (
-                raw_output.decode("utf-8", errors="replace") if isinstance(raw_output, bytes) else (raw_output or "")
+                raw_output.decode("utf-8", errors="replace")
+                if isinstance(raw_output, bytes)
+                else (raw_output or "")
             )
             output = {
                 "output": raw_output,
@@ -43,9 +49,12 @@ class LocalEnvironment:
         return output
 
     def _check_finished(self, output: dict):
-        """Raises Submitted if the output indicates task completion."""
         lines = output.get("output", "").lstrip().splitlines(keepends=True)
-        if lines and lines[0].strip() == "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT" and output["returncode"] == 0:
+        if (
+            lines
+            and lines[0].strip() == "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT"
+            and output["returncode"] == 0
+        ):
             submission = "".join(lines[1:])
             raise Submitted(
                 {
@@ -56,7 +65,9 @@ class LocalEnvironment:
             )
 
     def get_template_vars(self, **kwargs) -> dict[str, Any]:
-        return recursive_merge(self.config.model_dump(), platform.uname()._asdict(), os.environ, kwargs)
+        return recursive_merge(
+            self.config.model_dump(), platform.uname()._asdict(), dict(os.environ), kwargs
+        )
 
     def serialize(self) -> dict:
         return {
@@ -69,8 +80,9 @@ class LocalEnvironment:
         }
 
 
-def _run(command: str, cwd: str, env: dict[str, str], timeout: int) -> subprocess.CompletedProcess[str]:
-    """Like subprocess.run, but kills the whole process group on timeout so no children are orphaned."""
+def _run(
+    command: str, cwd: str, env: dict[str, str], timeout: int
+) -> subprocess.CompletedProcess[str]:
     process = subprocess.Popen(
         command,
         shell=True,
@@ -88,5 +100,5 @@ def _run(command: str, cwd: str, env: dict[str, str], timeout: int) -> subproces
     except subprocess.TimeoutExpired:
         os.killpg(process.pid, signal.SIGKILL) if os.name == "posix" else process.kill()
         stdout, _ = process.communicate()
-        raise subprocess.TimeoutExpired(command, timeout, output=stdout)
+        raise subprocess.TimeoutExpired(command, timeout, output=stdout) from None
     return subprocess.CompletedProcess(command, process.returncode, stdout=stdout)

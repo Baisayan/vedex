@@ -1,5 +1,3 @@
-"""Environment implementations for mini-SWE-agent."""
-
 import copy
 import importlib
 
@@ -7,12 +5,7 @@ from vedex import Environment
 
 _ENVIRONMENT_MAPPING = {
     "docker": "vedex.environments.docker.DockerEnvironment",
-    "singularity": "vedex.environments.singularity.SingularityEnvironment",
     "local": "vedex.environments.local.LocalEnvironment",
-    "swerex_docker": "vedex.environments.extra.swerex_docker.SwerexDockerEnvironment",
-    "swerex_modal": "vedex.environments.extra.swerex_modal.SwerexModalEnvironment",
-    "bubblewrap": "vedex.environments.extra.bubblewrap.BubblewrapEnvironment",
-    "contree": "vedex.environments.extra.contree.ContreeEnvironment",
 }
 
 
@@ -23,8 +16,11 @@ def get_environment_class(spec: str) -> type[Environment]:
         module = importlib.import_module(module_name)
         return getattr(module, class_name)
     except (ValueError, ImportError, AttributeError):
-        msg = f"Unknown environment type: {spec} (resolved to {full_path}, available: {_ENVIRONMENT_MAPPING})"
-        raise ValueError(msg)
+        msg = (
+            f"Unknown environment type: {spec} (resolved to {full_path}, "
+            f"available: {_ENVIRONMENT_MAPPING})"
+        )
+        raise ValueError(msg) from None
 
 
 def get_environment(config: dict, *, default_type: str = "") -> Environment:

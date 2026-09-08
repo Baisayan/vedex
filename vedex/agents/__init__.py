@@ -1,7 +1,6 @@
-"""Agent implementations for mini-SWE-agent."""
-
 import copy
 import importlib
+from collections.abc import Callable
 
 from vedex import Agent, Environment, Model
 
@@ -11,7 +10,7 @@ _AGENT_MAPPING = {
 }
 
 
-def get_agent_class(spec: str) -> type[Agent]:
+def get_agent_class(spec: str) -> Callable[..., Agent]:
     full_path = _AGENT_MAPPING.get(spec, spec)
     try:
         module_name, class_name = full_path.rsplit(".", 1)
